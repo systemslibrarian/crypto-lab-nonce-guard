@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <script>
+      (function () {
+        const saved = localStorage.getItem('theme');
+        document.documentElement.setAttribute('data-theme', saved ?? 'dark');
+      })();
+    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Interactive comparison of AES-GCM vs AES-GCM-SIV nonce misuse resistance with live cryptographic attack demo" />
+    <title>Nonce Guard — AES-GCM vs AES-GCM-SIV</title>
+  </head>
+  <body>
+    <div id="app">
+      <header>
+        <h1>crypto-lab-nonce-guard</h1>
+        <p>AES-GCM vs AES-GCM-SIV — nonce misuse resistance compared</p>
+        <button class="theme-toggle" type="button" id="theme-toggle" aria-label="Switch to light mode">🌙</button>
+      </header>
+
+      <nav aria-label="Page sections">
+        <a href="#section-a">The Nonce Problem</a>
+        <a href="#section-b">Live Attack Demo</a>
+        <a href="#section-c">SIV Visualizer</a>
+        <a href="#section-d">When to Use Which</a>
+      </nav>
+
+      <!-- ============ SECTION A: The Nonce Problem ============ -->
+      <section id="section-a" aria-labelledby="section-a-heading">
+        <h2 id="section-a-heading">A — The Nonce Problem</h2>
+
+        <div class="card">
+          <h3 id="a1-heading">A1 — What is a nonce?</h3>
+          <p>A <strong>nonce</strong> (number used once) in AEAD schemes is a per-encryption value that must be <em>unique</em> for every encryption under the same key. It does not need to be secret. AES-GCM uses a <strong>96-bit nonce</strong> (12 bytes). The security proof assumes the nonce is never reused.</p>
+          <p>NIST SP 800-38D calls it an <strong>Initialization Vector (IV)</strong>; RFC 5116 calls it a <strong>nonce</strong> — same concept.</p>
+          <div class="nonce-visual" aria-label="96-bit nonce displayed as 12 hex bytes">
+            <p class="output-label">96-BIT NONCE (12 BYTES)</p>
+            <div id="nonce-display" class="nonce-display" role="img" aria-label="Example nonce: 12 random hex bytes"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 id="a2-heading">A2 — Why nonce reuse breaks AES-GCM</h3>
+
+          <h4>Level 1 — Keystream reuse (confidentiality failure)</h4>
+          <p>AES-GCM encrypts by XORing plaintext with a keystream derived from (key, nonce, counter). If the same (key, nonce) pair is used twice:</p>
+          <div class="equation" role="math" aria-label="C1 equals P1 XOR keystream, C2 equals P2 XOR keystream, C1 XOR C2 equals P1 XOR P2">
+            C₁ = P₁ ⊕ KS<br>
+            C₂ = P₂ ⊕ KS<br>
+            <strong>C₁ ⊕ C₂ = P₁ ⊕ P₂</strong>
+          </div>
+          <p>The attacker recovers the XOR of the two plaintexts — which often recovers both plaintexts in practice.</p>
+
+          <h4>Level 2 — Authentication key recovery (integrity failure)</h4>
+          <p>AES-GCM's authentication tag uses a polynomial hash over GF(2¹²⁸) with a key <code>H = AES_K(0¹²⁸)</code>. When the same nonce is reused, the attacker can solve for H algebraically from two (ciphertext, tag) pairs. Once H is known, the attacker can <strong>forge valid authentication tags</strong> for arbitrary ciphertexts — total integrity failure.</p>
+          <div class="equation" role="math" aria-label="tag equals GHASH of AAD and ciphertext XOR encrypted nonce">
+            tag = GHASH_H(AAD, C) ⊕ E_K(nonce ‖ 0³¹1)
+          </div>
+          <p>GHASH_H uses H directly, making H recovery from two equations over GF(2¹²⁸) a solvable linear algebra problem.</p>
+        </div>
+
+        <div class="card">
+          <h3 id="a3-heading">A3 — The SIV construction (RFC 8452)</h3>
+          <p>AES-GCM-SIV uses a <strong>synthetic IV</strong> approach:</p>
+          <ol>
+            <li>Derive a message-specific authentication key and encryption key from the (key, nonce)</li>
+            <li>Compute a tag over the plaintext using <strong>POLYVAL</strong> (a GF(2¹²⁸) variant defined in RFC 8452)</li>
+            <li>Use that tag as the <strong>IV for AES-CTR encryption</strong></li>
+          </ol>
+          <p>The IV is derived from the plaintext itself. If the same (key, nonce) pair encrypts two <em>different</em> plaintexts, the two IVs differ. Nonce reuse degrades to leaking only whether two plaintexts were identical — not the keystream, not the authentication key.</p>
+
+          <div class="flow-diagram" role="img" aria-label="AES-GCM-SIV construction flow: master key plus nonce derives auth key and encryption key, POLYVAL produces tag, tag becomes synthetic IV for AES-CTR">
+            <div class="flow-box key">256-bit Master Key + 96-bit Nonce</div>
+            <div class="flow-arrow" aria-hidden="true">↓</div>
+            <div class="flow-box">Key Derivation (AES-CTR)</div>
+            <div class="flow-arrow" aria-hidden="true">↓</div>
+            <div class="flow-row">
+              <div class="flow-box key">128-bit Auth Key (H)</div>
+              <div class="flow-box key">256-bit Encryption Key</div>
+            </div>
+            <div class="flow-arrow" aria-hidden="true">↓</div>
+            <div class="flow-box tag">POLYVAL(H, AAD, plaintext) ⊕ nonce → Tag</div>
+            <div class="flow-arrow" aria-hidden="true">↓</div>
+            <div class="flow-box output">Tag (with MSB cleared) = Synthetic IV → AES-CTR Encryption</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ SECTION B: Live Attack Demo ============ -->
+      <section id="section-b" aria-labelledby="section-b-heading">
+        <h2 id="section-b-heading">B — Live Nonce Reuse Attack Demo</h2>
+
+        <div class="controls" role="group" aria-label="Encryption controls">
+          <div class="control-grid">
+            <div>
+              <label for="msg1">Message 1</label>
+              <textarea id="msg1" rows="2" aria-describedby="msg1-desc">Transfer $1000 to Alice</textarea>
+              <span id="msg1-desc" class="sr-only">First plaintext message for encryption</span>
+            </div>
+            <div>
+              <label for="msg2">Message 2</label>
+              <textarea id="msg2" rows="2" aria-describedby="msg2-desc">Transfer $9000 to Mallory</textarea>
+              <span id="msg2-desc" class="sr-only">Second plaintext message for encryption</span>
+            </div>
+          </div>
+
+          <div class="toggle-row">
+            <label class="toggle-switch" aria-label="Use same nonce for both messages">
+              <input type="checkbox" id="same-nonce" checked>
+              <span class="slider" aria-hidden="true"></span>
+            </label>
+            <span id="nonce-toggle-label">Use same nonce (attack scenario)</span>
+          </div>
+
+          <div class="button-row">
+            <button type="button" class="primary" id="btn-encrypt">Encrypt Both</button>
+            <button type="button" class="secondary" id="btn-attack" disabled aria-disabled="true">Run Attack</button>
+          </div>
+        </div>
+
+        <div class="demo-columns" role="region" aria-label="Encryption results comparison">
+          <!-- AES-GCM Column -->
+          <div class="demo-column" id="gcm-panel" aria-labelledby="gcm-heading">
+            <h3 id="gcm-heading">🔓 AES-GCM <span class="chip broken">Vulnerable</span></h3>
+            <div id="gcm-output" class="output-area" aria-live="polite">
+              <p class="placeholder-text">Click "Encrypt Both" to begin</p>
+            </div>
+          </div>
+
+          <!-- AES-GCM-SIV Column -->
+          <div class="demo-column" id="siv-panel" aria-labelledby="siv-heading">
+            <h3 id="siv-heading">🔒 AES-GCM-SIV <span class="chip safe">Resistant</span></h3>
+            <div id="siv-output" class="output-area" aria-live="polite">
+              <p class="placeholder-text">Click "Encrypt Both" to begin</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ SECTION C: SIV Visualizer ============ -->
+      <section id="section-c" aria-labelledby="section-c-heading">
+        <h2 id="section-c-heading">C — Synthetic IV Construction Visualizer</h2>
+
+        <div class="card">
+          <h3>C1 — Key Derivation</h3>
+          <p>AES-GCM-SIV derives per-message keys from the master key and nonce:</p>
+          <div class="flow-diagram" role="img" aria-label="Key derivation: master key plus nonce produces auth key and encryption key via AES-CTR">
+            <div class="flow-box key">256-bit Master Key + 96-bit Nonce</div>
+            <div class="flow-arrow" aria-hidden="true">↓</div>
+            <div class="flow-box">AES-CTR(counter=0) → 128-bit Auth Key</div>
+            <div class="flow-arrow" aria-hidden="true">↓</div>
+            <div class="flow-box">AES-CTR(counter=1,2) → 256-bit Encryption Key</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>C2 — POLYVAL Authentication</h3>
+          <p>POLYVAL is a GF(2¹²⁸) polynomial hash defined in RFC 8452, using a different field representation than GHASH. The key distinction: POLYVAL's authentication key H is <strong>derived per-message</strong> from the (key, nonce) pair, not fixed per-key as in AES-GCM's GHASH.</p>
+          <div class="equation" role="math" aria-label="tag equals AES of POLYVAL hash XOR nonce, with most significant bit cleared">
+            tag = AES_K(POLYVAL(H, AAD, plaintext) ⊕ nonce) &amp; clear MSB
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>C3 — Tag-as-IV (Interactive)</h3>
+          <p>The 128-bit POLYVAL tag becomes the synthetic IV after clearing one bit (preventing CTR counter overflow into tag space). Changing any byte of plaintext completely changes the tag and therefore the IV.</p>
+          <label for="siv-input">Enter a message to see the SIV tag change:</label>
+          <input type="text" id="siv-input" class="interactive-input" value="Hello, world!" aria-describedby="siv-desc">
+          <span id="siv-desc" class="sr-only">Type any message to see how the AES-GCM-SIV tag changes with each character</span>
+          <div id="siv-tag-output" class="siv-tag-output" aria-live="polite"></div>
+        </div>
+      </section>
+
+      <!-- ============ SECTION D: When to Use Which ============ -->
+      <section id="section-d" aria-labelledby="section-d-heading">
+        <h2 id="section-d-heading">D — When to Use Which</h2>
+
+        <div class="card table-wrapper">
+          <h3>D1 — Comparison Table</h3>
+          <div class="table-scroll" role="region" aria-label="Comparison table" tabindex="0">
+            <table class="comparison-table">
+              <caption class="sr-only">Comparison of AES-GCM and AES-GCM-SIV properties</caption>
+              <thead>
+                <tr><th scope="col">Property</th><th scope="col">AES-GCM</th><th scope="col">AES-GCM-SIV</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Standard</td><td>NIST SP 800-38D</td><td>RFC 8452</td></tr>
+                <tr><td>Nonce size</td><td>96 bits</td><td>96 bits</td></tr>
+                <tr><td>Nonce reuse consequence</td><td class="text-broken">Key recovery + full plaintext XOR</td><td class="text-warning">Identical plaintext detection only</td></tr>
+                <tr><td>Performance</td><td>~1 pass</td><td>~2 passes (extra POLYVAL)</td></tr>
+                <tr><td>FIPS approved</td><td>Yes</td><td>No (as of 2024)</td></tr>
+                <tr><td>Hardware acceleration</td><td>AES-NI + PCLMULQDQ</td><td>AES-NI + PCLMULQDQ</td></tr>
+                <tr><td>Online encryption</td><td>Yes</td><td>No — must buffer full plaintext</td></tr>
+                <tr><td>Deployed in</td><td>TLS 1.3, QUIC, IPsec</td><td>Google internal, QUIC experiments</td></tr>
+                <tr><td>Recommendation</td><td>✅ Nonce uniqueness guaranteed</td><td>✅ Nonce uniqueness uncertain</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>D2 — Decision Guidance</h3>
+          <div class="scenario">
+            <h4>Scenario 1 — Single server, sequential encryption</h4>
+            <p>AES-GCM with a counter nonce is safe. Nonce uniqueness is easy to guarantee. No need for SIV overhead.</p>
+          </div>
+          <div class="scenario">
+            <h4>Scenario 2 — Distributed system, multiple encryptors</h4>
+            <p>Coordinating nonces across servers is error-prone. AES-GCM-SIV degrades gracefully on accidental reuse. Use SIV or use random 96-bit nonces with AES-GCM (collision risk is low at &lt; 2³² messages per key).</p>
+          </div>
+          <div class="scenario">
+            <h4>Scenario 3 — Key wrapping and key storage</h4>
+            <p>AES-GCM-SIV is designed for this — short messages, repeated access to the same key, nonce coordination difficult. Google's Tink library uses it for key wrapping.</p>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>D3 — Honest Limitations of AES-GCM-SIV</h3>
+          <ul class="limitations">
+            <li><strong>Not FIPS-approved</strong> — cannot use in FIPS 140-2/3 contexts</li>
+            <li><strong>No online encryption</strong> — must have full plaintext before starting (not suitable for streaming)</li>
+            <li><strong>Slightly slower</strong> — the extra POLYVAL pass costs roughly 10–20% throughput</li>
+            <li><strong>Not yet widely deployed</strong> — operational experience is thin compared to AES-GCM</li>
+          </ul>
+        </div>
+      </section>
+
+      <footer>
+        <p>Part of the <a href="https://systemslibrarian.github.io/crypto-lab/">crypto-lab</a> portfolio</p>
+        <nav aria-label="Related demos">
+          <a href="https://systemslibrarian.github.io/crypto-lab-aes-modes/">AES Modes</a>
+          <a href="https://systemslibrarian.github.io/crypto-lab-chacha20-stream/">ChaCha20 Stream</a>
+          <a href="https://systemslibrarian.github.io/crypto-lab-mac-race/">MAC Race</a>
+        </nav>
+        <p><em>"So whether you eat or drink or whatever you do, do it all for the glory of God." — 1 Corinthians 10:31</em></p>
+      </footer>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
