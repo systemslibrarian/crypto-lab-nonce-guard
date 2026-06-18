@@ -10,7 +10,7 @@ crypto-lab-nonce-guard is a browser-based comparison of AES-GCM (NIST SP 800-38D
 ## 2. When to Use It
 
 - **Use AES-GCM when nonce uniqueness is strictly guaranteed** (sequential counter, single encryptor) and FIPS compliance is required — it is faster and universally supported.
-- **Use AES-GCM-SIV in distributed systems** where multiple encryptors may accidentally generate the same nonce, accepting the ~10–20% throughput cost and the loss of FIPS approval.
+- **Use AES-GCM-SIV in distributed systems** where multiple encryptors may accidentally generate the same nonce, accepting the two-pass throughput cost (approaching ~2× on long messages) and the loss of FIPS approval.
 - **Use AES-GCM-SIV for key wrapping and key storage** where the same key encrypts many short messages and nonce coordination is operationally difficult.
 - **Do not use AES-GCM-SIV for streaming encryption** — it requires buffering the full plaintext before starting.
 - **Do not use either scheme for password hashing** — they are not memory-hard and provide no protection against offline brute force of short secrets.
@@ -23,7 +23,7 @@ Enter two messages and toggle nonce reuse on. Click "Encrypt Both" to encrypt un
 
 ## 4. What Can Go Wrong
 
-- **Nonce reuse in AES-GCM:** reusing any (key, nonce) pair allows an attacker with two ciphertexts to recover `P1 ⊕ P2` and solve for the GHASH key H, enabling arbitrary tag forgery.
+- **Nonce reuse in AES-GCM:** reusing any (key, nonce) pair allows an attacker with two ciphertexts to recover `P1 ⊕ P2` and, via Joux's "forbidden attack," solve a polynomial equation over GF(2¹²⁸) for candidate GHASH keys H — enabling tag forgery under that nonce.
 - **Random nonce collision:** using random 96-bit nonces with AES-GCM risks collision after ~2³² messages per key (birthday bound). Rotate keys well before this limit.
 - **Missing AAD binding:** failing to include the correct Additional Authenticated Data allows an attacker to swap AAD contexts (e.g., replay an old ciphertext in a new session).
 - **AES-GCM-SIV identical plaintext leak:** nonce reuse with identical plaintexts produces identical ciphertexts, leaking that the same message was sent twice — relevant in low-entropy message spaces.

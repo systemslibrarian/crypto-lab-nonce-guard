@@ -49,16 +49,27 @@ function initNonceDisplay(): void {
 // ── Helpers: output rendering ──
 function badge(type: 'safe' | 'warning' | 'broken', text: string): string {
   const icon = type === 'safe' ? '🟢' : type === 'warning' ? '🟡' : '🔴';
-  return `<span class="status-badge ${type}" role="status">${icon} ${text}</span>`;
+  // Emoji is decorative (color already encodes status); the enclosing output
+  // area is aria-live, so the badge itself must not be a nested live region.
+  return `<span class="status-badge ${type}"><span aria-hidden="true">${icon}</span> ${text}</span>`;
 }
 
 function hexBlock(label: string, hex: string): string {
   return `<div class="output-label">${label}</div><div class="hex-output">${hex}</div>`;
 }
 
+// Concise, polite announcement for screen-reader users. The detail panels hold
+// long hex strings that should not be read aloud, so a short summary is sent
+// to a dedicated live region instead.
+function announce(message: string): void {
+  const status = document.getElementById('demo-status');
+  if (status) status.textContent = message;
+}
+
 // ── Section B: Live demo ──
 interface EncryptionResult {
-  nonce: Uint8Array;
+  nonce1: Uint8Array;
+  nonce2: Uint8Array;
   ct1: Uint8Array;
   ct2: Uint8Array;
   tag1: Uint8Array;
@@ -94,7 +105,8 @@ async function doEncrypt(): Promise<void> {
   const gcm1 = await encryptGCM(gcmKey, nonceGCM1, pt1);
   const gcm2 = await encryptGCM(gcmKey, nonceGCM2, pt2);
   gcmResult = {
-    nonce: nonceGCM1,
+    nonce1: nonceGCM1,
+    nonce2: nonceGCM2,
     ct1: gcm1.ciphertext,
     ct2: gcm2.ciphertext,
     tag1: gcm1.tag,
@@ -108,7 +120,8 @@ async function doEncrypt(): Promise<void> {
   const siv1 = encryptSIV(rawKey, nonceSIV1, pt1);
   const siv2 = encryptSIV(rawKey, nonceSIV2, pt2);
   sivResult = {
-    nonce: nonceSIV1,
+    nonce1: nonceSIV1,
+    nonce2: nonceSIV2,
     ct1: siv1.ciphertext,
     ct2: siv2.ciphertext,
     tag1: siv1.tag,
@@ -119,6 +132,12 @@ async function doEncrypt(): Promise<void> {
   renderEncryptOutput();
   attackBtn.disabled = false;
   attackBtn.setAttribute('aria-disabled', 'false');
+
+  announce(
+    sameNonce
+      ? 'Both messages encrypted with AES-GCM and AES-GCM-SIV using the same nonce. Run Attack is now available.'
+      : 'Both messages encrypted with AES-GCM and AES-GCM-SIV using unique nonces. Run Attack is now available.',
+  );
 }
 
 function renderEncryptOutput(): void {
@@ -134,7 +153,7 @@ function renderEncryptOutput(): void {
 
   gcmOut.innerHTML = `
     ${nonceBadge(gcmResult)}
-    ${hexBlock('Nonce', toHex(gcmResult.nonce))}
+    ${gcmResult.sameNonce ? hexBlock('Nonce', toHex(gcmResult.nonce1)) : hexBlock('Nonce 1', toHex(gcmResult.nonce1)) + hexBlock('Nonce 2', toHex(gcmResult.nonce2))}
     ${hexBlock('Ciphertext 1', toHex(gcmResult.ct1, 32))}
     ${hexBlock('Ciphertext 2', toHex(gcmResult.ct2, 32))}
     ${hexBlock('Tag 1', toHex(gcmResult.tag1))}
@@ -144,7 +163,7 @@ function renderEncryptOutput(): void {
 
   sivOut.innerHTML = `
     ${nonceBadge(sivResult)}
-    ${hexBlock('Nonce', toHex(sivResult.nonce))}
+    ${sivResult.sameNonce ? hexBlock('Nonce', toHex(sivResult.nonce1)) : hexBlock('Nonce 1', toHex(sivResult.nonce1)) + hexBlock('Nonce 2', toHex(sivResult.nonce2))}
     ${hexBlock('Ciphertext 1', toHex(sivResult.ct1, 32))}
     ${hexBlock('Ciphertext 2', toHex(sivResult.ct2, 32))}
     ${hexBlock('Tag 1', toHex(sivResult.tag1))}
@@ -162,20 +181,22 @@ function doAttack(): void {
   if (!gcmResult.sameNonce) {
     gcmAttack.innerHTML = badge('safe', 'NO ATTACK — nonces are unique');
     sivAttack.innerHTML = badge('safe', 'NO ATTACK — nonces are unique');
+    announce(
+      'Nonces are unique, so no attack is possible against either scheme.',
+    );
     return;
   }
 
   // GCM: XOR attack works
   const gcmXor = xorBytes(gcmResult.ct1, gcmResult.ct2);
-  const ptXor = xorBytes(textToBytes(msg1Text), textToBytes(msg2Text));
   gcmAttack.innerHTML = `
     <h4>Attack Results</h4>
     ${hexBlock('C₁ ⊕ C₂', toHex(gcmXor))}
-    ${hexBlock('Recovered P₁ ⊕ P₂', toHex(ptXor))}
+    ${hexBlock('Recovered P₁ ⊕ P₂', toHex(gcmXor))}
     <div class="output-label">DECODED (PRINTABLE)</div>
-    <div class="hex-output">${xorToReadable(ptXor)}</div>
+    <div class="hex-output">${xorToReadable(gcmXor)}</div>
     ${badge('broken', 'CONFIDENTIALITY BROKEN — XOR of plaintexts recovered')}
-    ${badge('broken', 'INTEGRITY BROKEN — Authentication key H is recoverable from these two (ciphertext, tag) pairs')}
+    ${badge('broken', "INTEGRITY BROKEN — the authentication key H is recoverable from these two (ciphertext, tag) pairs (Joux's forbidden attack)")}
   `;
 
   // SIV: XOR does not reveal plaintext XOR
@@ -200,10 +221,17 @@ function doAttack(): void {
   }
   sivHtml += badge(
     'safe',
-    'INTEGRITY INTACT — Authentication key is not recoverable',
+    'INTEGRITY INTACT — the tag is AES-encrypted, so H stays hidden even though the nonce repeats',
   );
 
   sivAttack.innerHTML = sivHtml;
+
+  announce(
+    'Attack complete. AES-GCM: confidentiality and integrity broken — the XOR of the two plaintexts was recovered and the authentication key is recoverable. ' +
+      (identicalPt
+        ? 'AES-GCM-SIV: only leaked that the two plaintexts were identical; integrity intact.'
+        : 'AES-GCM-SIV: ciphertexts differ and no keystream was reused; integrity intact.'),
+  );
 }
 
 // ── Section C: Interactive SIV tag demo ──

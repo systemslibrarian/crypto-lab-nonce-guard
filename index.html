@@ -5,14 +5,24 @@
     <script>
       (function () {
         const saved = localStorage.getItem('theme');
-        document.documentElement.setAttribute('data-theme', saved ?? 'dark');
+        const prefersLight =
+          window.matchMedia &&
+          window.matchMedia('(prefers-color-scheme: light)').matches;
+        document.documentElement.setAttribute(
+          'data-theme',
+          saved ?? (prefersLight ? 'light' : 'dark'),
+        );
       })();
     </script>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="description" content="Interactive comparison of AES-GCM vs AES-GCM-SIV nonce misuse resistance with live cryptographic attack demo" />
+    <meta name="theme-color" content="#0f1117" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f4f5f7" media="(prefers-color-scheme: light)" />
+    <meta name="color-scheme" content="dark light" />
     <title>Nonce Guard — AES-GCM vs AES-GCM-SIV</title>
   </head>
   <body>
+    <a class="skip-link" href="#main">Skip to main content</a>
     <div id="app">
       <header>
         <h1>crypto-lab-nonce-guard</h1>
@@ -27,6 +37,7 @@
         <a href="#section-d">When to Use Which</a>
       </nav>
 
+      <main id="main" tabindex="-1">
       <!-- ============ SECTION A: The Nonce Problem ============ -->
       <section id="section-a" aria-labelledby="section-a-heading">
         <h2 id="section-a-heading">A — The Nonce Problem</h2>
@@ -54,36 +65,40 @@
           <p>The attacker recovers the XOR of the two plaintexts — which often recovers both plaintexts in practice.</p>
 
           <h4>Level 2 — Authentication key recovery (integrity failure)</h4>
-          <p>AES-GCM's authentication tag uses a polynomial hash over GF(2¹²⁸) with a key <code>H = AES_K(0¹²⁸)</code>. When the same nonce is reused, the attacker can solve for H algebraically from two (ciphertext, tag) pairs. Once H is known, the attacker can <strong>forge valid authentication tags</strong> for arbitrary ciphertexts — total integrity failure.</p>
-          <div class="equation" role="math" aria-label="tag equals GHASH of AAD and ciphertext XOR encrypted nonce">
+          <p>AES-GCM's tag is built from GHASH, a polynomial hash over GF(2¹²⁸) keyed by <code>H = E_K(0¹²⁸)</code> — a value fixed by the key alone. For a 96-bit nonce the tag is:</p>
+          <div class="equation" role="math" aria-label="tag equals GHASH sub H of AAD and ciphertext, XOR E sub K of the nonce concatenated with 31 zero bits and a one bit">
             tag = GHASH_H(AAD, C) ⊕ E_K(nonce ‖ 0³¹1)
           </div>
-          <p>GHASH_H uses H directly, making H recovery from two equations over GF(2¹²⁸) a solvable linear algebra problem.</p>
+          <p>The masking term <code>E_K(nonce ‖ 0³¹1)</code> depends only on (key, nonce), so two messages under the same nonce share it. Subtracting their tags cancels the mask:</p>
+          <div class="equation" role="math" aria-label="tag one XOR tag two equals GHASH sub H of message one XOR GHASH sub H of message two">
+            tag₁ ⊕ tag₂ = GHASH_H(A₁,C₁) ⊕ GHASH_H(A₂,C₂)
+          </div>
+          <p>GHASH is a <em>polynomial in H</em>, so this is one polynomial equation in the single unknown H over GF(2¹²⁸). Finding its roots yields a small set of candidate values for H — this is Joux's <strong>"forbidden attack."</strong> Recovering H also exposes the mask, after which the attacker can <strong>forge valid tags for arbitrary ciphertexts under that nonce</strong> — total integrity failure. This is not theoretical: a 2016 survey (Böck, Zauner, Devlin et al.) found production HTTPS servers reusing AES-GCM nonces, making them vulnerable to exactly this attack.</p>
         </div>
 
         <div class="card">
           <h3 id="a3-heading">A3 — The SIV construction (RFC 8452)</h3>
           <p>AES-GCM-SIV uses a <strong>synthetic IV</strong> approach:</p>
           <ol>
-            <li>Derive a message-specific authentication key and encryption key from the (key, nonce)</li>
-            <li>Compute a tag over the plaintext using <strong>POLYVAL</strong> (a GF(2¹²⁸) variant defined in RFC 8452)</li>
-            <li>Use that tag as the <strong>IV for AES-CTR encryption</strong></li>
+            <li>Derive a per-nonce authentication key and encryption key from the master key and nonce</li>
+            <li>Hash the plaintext (and AAD) with <strong>POLYVAL</strong> — a GF(2¹²⁸) hash defined in RFC 8452 — then XOR in the nonce and <strong>AES-encrypt</strong> the result to produce the tag</li>
+            <li>Use that tag (top bit set) as the <strong>synthetic IV for AES-CTR encryption</strong></li>
           </ol>
           <p>The IV is derived from the plaintext itself. If the same (key, nonce) pair encrypts two <em>different</em> plaintexts, the two IVs differ. Nonce reuse degrades to leaking only whether two plaintexts were identical — not the keystream, not the authentication key.</p>
 
-          <div class="flow-diagram" role="img" aria-label="AES-GCM-SIV construction flow: master key plus nonce derives auth key and encryption key, POLYVAL produces tag, tag becomes synthetic IV for AES-CTR">
+          <div class="flow-diagram" role="img" aria-label="AES-GCM-SIV construction flow: master key plus nonce derives a per-nonce auth key and encryption key; POLYVAL hashes the plaintext, the nonce is XORed in, and the result is AES-encrypted to produce the tag; the tag with its top bit set becomes the synthetic IV for AES-CTR encryption">
             <div class="flow-box key">256-bit Master Key + 96-bit Nonce</div>
             <div class="flow-arrow" aria-hidden="true">↓</div>
-            <div class="flow-box">Key Derivation (AES-CTR)</div>
+            <div class="flow-box">Key Derivation (AES, encrypt-then-truncate)</div>
             <div class="flow-arrow" aria-hidden="true">↓</div>
             <div class="flow-row">
               <div class="flow-box key">128-bit Auth Key (H)</div>
               <div class="flow-box key">256-bit Encryption Key</div>
             </div>
             <div class="flow-arrow" aria-hidden="true">↓</div>
-            <div class="flow-box tag">POLYVAL(H, AAD, plaintext) ⊕ nonce → Tag</div>
+            <div class="flow-box tag">AES<sub>Kenc</sub>(POLYVAL(H, AAD, PT) ⊕ nonce, MSB cleared) → Tag</div>
             <div class="flow-arrow" aria-hidden="true">↓</div>
-            <div class="flow-box output">Tag (with MSB cleared) = Synthetic IV → AES-CTR Encryption</div>
+            <div class="flow-box output">Tag (MSB set) = Synthetic IV → AES-CTR Encryption</div>
           </div>
         </div>
       </section>
@@ -107,24 +122,28 @@
           </div>
 
           <div class="toggle-row">
-            <label class="toggle-switch" aria-label="Use same nonce for both messages">
-              <input type="checkbox" id="same-nonce" checked>
+            <label class="toggle-switch">
+              <input type="checkbox" id="same-nonce" aria-labelledby="nonce-toggle-label" checked>
               <span class="slider" aria-hidden="true"></span>
             </label>
-            <span id="nonce-toggle-label">Use same nonce (attack scenario)</span>
+            <label id="nonce-toggle-label" for="same-nonce" class="toggle-text">Use same nonce (attack scenario)</label>
           </div>
 
           <div class="button-row">
             <button type="button" class="primary" id="btn-encrypt">Encrypt Both</button>
             <button type="button" class="secondary" id="btn-attack" disabled aria-disabled="true">Run Attack</button>
           </div>
+
+          <!-- Concise live announcements for screen readers; the detail panels
+               below are kept silent so long hex strings are not read aloud. -->
+          <p id="demo-status" class="sr-only" role="status" aria-live="polite"></p>
         </div>
 
         <div class="demo-columns" role="region" aria-label="Encryption results comparison">
           <!-- AES-GCM Column -->
           <div class="demo-column" id="gcm-panel" aria-labelledby="gcm-heading">
             <h3 id="gcm-heading">🔓 AES-GCM <span class="chip broken">Vulnerable</span></h3>
-            <div id="gcm-output" class="output-area" aria-live="polite">
+            <div id="gcm-output" class="output-area">
               <p class="placeholder-text">Click "Encrypt Both" to begin</p>
             </div>
           </div>
@@ -132,7 +151,7 @@
           <!-- AES-GCM-SIV Column -->
           <div class="demo-column" id="siv-panel" aria-labelledby="siv-heading">
             <h3 id="siv-heading">🔒 AES-GCM-SIV <span class="chip safe">Resistant</span></h3>
-            <div id="siv-output" class="output-area" aria-live="polite">
+            <div id="siv-output" class="output-area">
               <p class="placeholder-text">Click "Encrypt Both" to begin</p>
             </div>
           </div>
@@ -145,31 +164,34 @@
 
         <div class="card">
           <h3>C1 — Key Derivation</h3>
-          <p>AES-GCM-SIV derives per-message keys from the master key and nonce:</p>
-          <div class="flow-diagram" role="img" aria-label="Key derivation: master key plus nonce produces auth key and encryption key via AES-CTR">
+          <p>AES-GCM-SIV derives per-nonce keys from the master key. For each counter it AES-encrypts the block <code>counter ‖ nonce</code> (counter is a 32-bit little-endian value; nonce is 96 bits) and keeps the <strong>low 8 bytes</strong> of the output, concatenating them:</p>
+          <div class="flow-diagram" role="img" aria-label="Key derivation: for each counter from 0 to 5, AES encrypts the counter concatenated with the nonce and the low 8 bytes are kept. Counters 0 and 1 form the 128-bit authentication key. Counters 2 through 5 form the 256-bit encryption key for AES-256.">
             <div class="flow-box key">256-bit Master Key + 96-bit Nonce</div>
             <div class="flow-arrow" aria-hidden="true">↓</div>
-            <div class="flow-box">AES-CTR(counter=0) → 128-bit Auth Key</div>
+            <div class="flow-box">AES(0‖N)[:8] ‖ AES(1‖N)[:8] → 128-bit Auth Key</div>
             <div class="flow-arrow" aria-hidden="true">↓</div>
-            <div class="flow-box">AES-CTR(counter=1,2) → 256-bit Encryption Key</div>
+            <div class="flow-box">AES(2‖N)[:8] ‖ AES(3‖N)[:8] ‖ AES(4‖N)[:8] ‖ AES(5‖N)[:8] → 256-bit Enc Key</div>
           </div>
+          <p class="tag-note">For a 128-bit master key the encryption key uses only counters 2–3 (two blocks).</p>
         </div>
 
         <div class="card">
           <h3>C2 — POLYVAL Authentication</h3>
-          <p>POLYVAL is a GF(2¹²⁸) polynomial hash defined in RFC 8452, using a different field representation than GHASH. The key distinction: POLYVAL's authentication key H is <strong>derived per-message</strong> from the (key, nonce) pair, not fixed per-key as in AES-GCM's GHASH.</p>
-          <div class="equation" role="math" aria-label="tag equals AES of POLYVAL hash XOR nonce, with most significant bit cleared">
-            tag = AES_K(POLYVAL(H, AAD, plaintext) ⊕ nonce) &amp; clear MSB
+          <p>POLYVAL is a GF(2¹²⁸) polynomial hash defined in RFC 8452 — essentially GHASH's mirror in a little-endian-friendly field representation. Its key H is derived <strong>per-nonce</strong> from (key, nonce). But the decisive difference from AES-GCM is the final step: the POLYVAL result is <strong>AES-encrypted before it is output</strong> as the tag.</p>
+          <div class="equation" role="math" aria-label="Step one: S equals POLYVAL of H, AAD and plaintext; then XOR the nonce into the first 12 bytes and clear the most significant bit of byte 15. Step two: the tag equals AES, under the encryption key, of S.">
+            S = POLYVAL(H, AAD, PT); XOR nonce into bytes 0–11; clear MSB of byte 15<br>
+            tag = AES<sub>Kenc</sub>(S)
           </div>
+          <p>Because the attacker only ever sees <code>AES<sub>Kenc</sub>(S)</code> — never POLYVAL's raw output — the "subtract two tags" trick from AES-GCM no longer linearizes anything. The AES pseudorandom permutation hides the polynomial structure, so even reusing a nonce (which <em>does</em> reuse H) never leaks the authentication key.</p>
         </div>
 
         <div class="card">
           <h3>C3 — Tag-as-IV (Interactive)</h3>
-          <p>The 128-bit POLYVAL tag becomes the synthetic IV after clearing one bit (preventing CTR counter overflow into tag space). Changing any byte of plaintext completely changes the tag and therefore the IV.</p>
+          <p>The 128-bit tag (the AES-encrypted POLYVAL result) is reused as the initial AES-CTR counter block — with the most significant bit of its last byte <strong>set to 1</strong>. That is the same bit cleared on the input to the tag-generating AES call, so the value encrypted to form the tag can never coincide with any CTR counter block. Changing any byte of plaintext completely changes the tag and therefore the IV.</p>
           <label for="siv-input">Enter a message to see the SIV tag change:</label>
           <input type="text" id="siv-input" class="interactive-input" value="Hello, world!" aria-describedby="siv-desc">
           <span id="siv-desc" class="sr-only">Type any message to see how the AES-GCM-SIV tag changes with each character</span>
-          <div id="siv-tag-output" class="siv-tag-output" aria-live="polite"></div>
+          <div id="siv-tag-output" class="siv-tag-output"></div>
         </div>
       </section>
 
@@ -190,7 +212,7 @@
                 <tr><td>Nonce size</td><td>96 bits</td><td>96 bits</td></tr>
                 <tr><td>Nonce reuse consequence</td><td class="text-broken">Key recovery + full plaintext XOR</td><td class="text-warning">Identical plaintext detection only</td></tr>
                 <tr><td>Performance</td><td>~1 pass</td><td>~2 passes (extra POLYVAL)</td></tr>
-                <tr><td>FIPS approved</td><td>Yes</td><td>No (as of 2024)</td></tr>
+                <tr><td>FIPS approved</td><td>Yes</td><td class="text-warning">No — an IRTF CFRG spec (RFC 8452), not a NIST mode</td></tr>
                 <tr><td>Hardware acceleration</td><td>AES-NI + PCLMULQDQ</td><td>AES-NI + PCLMULQDQ</td></tr>
                 <tr><td>Online encryption</td><td>Yes</td><td>No — must buffer full plaintext</td></tr>
                 <tr><td>Deployed in</td><td>TLS 1.3, QUIC, IPsec</td><td>Google internal, QUIC experiments</td></tr>
@@ -221,11 +243,12 @@
           <ul class="limitations">
             <li><strong>Not FIPS-approved</strong> — cannot use in FIPS 140-2/3 contexts</li>
             <li><strong>No online encryption</strong> — must have full plaintext before starting (not suitable for streaming)</li>
-            <li><strong>Slightly slower</strong> — the extra POLYVAL pass costs roughly 10–20% throughput</li>
+            <li><strong>Two passes over the data</strong> — the tag must be computed before encryption can begin, so throughput can approach half that of single-pass AES-GCM on long messages, though hardware-optimized (AES-NI + PCLMULQDQ) implementations narrow the gap</li>
             <li><strong>Not yet widely deployed</strong> — operational experience is thin compared to AES-GCM</li>
           </ul>
         </div>
       </section>
+      </main>
 
       <footer>
         <p>Part of the <a href="https://systemslibrarian.github.io/crypto-lab/">crypto-lab</a> portfolio</p>
