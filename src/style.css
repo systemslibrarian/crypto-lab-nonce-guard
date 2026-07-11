@@ -12,11 +12,21 @@
   --text: #c9cdd5;
   --text-muted: #9aa3b2;
   --accent: #60a5fa;
+  /* Ink for text/icons that sit on the --accent fill (e.g. the primary
+     button). White on #60a5fa is only 2.54:1; a near-black ink clears 4.5:1. */
+  --on-accent: #0b1220;
   --border: #2e3140;
   --code-bg: #1e2029;
+  /* Swatch colours (borders, standalone glyphs) — bright for the dark canvas. */
   --status-safe: #22c55e;
   --status-warning: #f59e0b;
   --status-broken: #ef4444;
+  /* Text colours for status words sitting on the 15%-tinted badge fills. The
+     bright swatch hues only reach ~3.8:1 on their own tint; these lifted
+     variants clear 4.5:1. */
+  --status-safe-text: #4ade80;
+  --status-warning-text: #fbbf24;
+  --status-broken-text: #f87171;
   --shadow: rgba(0, 0, 0, 0.5) 0 4px 12px;
   color-scheme: dark;
 }
@@ -28,12 +38,21 @@
   --surface-alt: #ebedf0;
   --text: #1f2937;
   --text-muted: #4b5563;
-  --accent: #2563eb;
+  /* Deepened from #2563eb (only 4.4:1 on the #ebedf0 surface-alt fill) so
+     accent text on cards and swatches clears 4.5:1. */
+  --accent: #1d4ed8;
+  --on-accent: #ffffff;
   --border: #d1d5db;
   --code-bg: #e8eaed;
+  /* Swatch colours (borders, standalone glyphs). */
   --status-safe: #16a34a;
   --status-warning: #d97706;
   --status-broken: #dc2626;
+  /* Deeper text variants for status words on tinted badge/flow-box fills;
+     the swatch hues land at ~2.7-3.8:1 on those tints. */
+  --status-safe-text: #12703b;
+  --status-warning-text: #9a5b06;
+  --status-broken-text: #b91c1c;
   --shadow: rgba(0, 0, 0, 0.1) 0 4px 12px;
   color-scheme: light;
 }
@@ -361,12 +380,12 @@ pre {
 
 .chip.broken {
   background: color-mix(in srgb, var(--status-broken) 15%, transparent);
-  color: var(--status-broken);
+  color: var(--status-broken-text);
 }
 
 .chip.safe {
   background: color-mix(in srgb, var(--status-safe) 15%, transparent);
-  color: var(--status-safe);
+  color: var(--status-safe-text);
 }
 
 /* --- Controls --- */
@@ -493,7 +512,7 @@ button.primary {
   font-size: 0.85rem;
   font-weight: 600;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   border: none;
   border-radius: 6px;
   padding: 0.6rem 1.25rem;
@@ -561,19 +580,19 @@ button.secondary:hover {
 
 .status-badge.safe {
   background: color-mix(in srgb, var(--status-safe) 15%, transparent);
-  color: var(--status-safe);
+  color: var(--status-safe-text);
   border: 1px solid color-mix(in srgb, var(--status-safe) 30%, transparent);
 }
 
 .status-badge.warning {
   background: color-mix(in srgb, var(--status-warning) 15%, transparent);
-  color: var(--status-warning);
+  color: var(--status-warning-text);
   border: 1px solid color-mix(in srgb, var(--status-warning) 30%, transparent);
 }
 
 .status-badge.broken {
   background: color-mix(in srgb, var(--status-broken) 15%, transparent);
-  color: var(--status-broken);
+  color: var(--status-broken-text);
   border: 1px solid color-mix(in srgb, var(--status-broken) 30%, transparent);
 }
 
@@ -639,12 +658,12 @@ button.secondary:hover {
 
 .flow-box.tag {
   border-color: var(--status-warning);
-  color: var(--status-warning);
+  color: var(--status-warning-text);
 }
 
 .flow-box.output {
   border-color: var(--status-safe);
-  color: var(--status-safe);
+  color: var(--status-safe-text);
 }
 
 .flow-arrow {
@@ -686,11 +705,11 @@ button.secondary:hover {
 }
 
 .text-broken {
-  color: var(--status-broken);
+  color: var(--status-broken-text);
 }
 
 .text-warning {
-  color: var(--status-warning);
+  color: var(--status-warning-text);
 }
 
 @media (max-width: 768px) {
@@ -776,13 +795,22 @@ footer nav a:hover {
 }
 
 /* --- Links --- */
+/* Inline links inside text get a persistent underline so they are
+   distinguishable from surrounding copy without relying on colour alone
+   (WCAG 1.4.1 / axe link-in-text-block). Chip-style links in the section
+   and footer navs opt out below since their box styling conveys the role. */
 a {
   color: var(--accent);
-  text-decoration: none;
+  text-decoration: underline;
 }
 
 a:hover {
   text-decoration: underline;
+}
+
+nav[aria-label="Page sections"] a,
+footer nav a {
+  text-decoration: none;
 }
 
 /* --- Accessible focus --- */
