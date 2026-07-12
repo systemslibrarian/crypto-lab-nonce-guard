@@ -191,6 +191,7 @@
             tag₁ ⊕ tag₂ = GHASH_H(A₁,C₁) ⊕ GHASH_H(A₂,C₂)
           </div>
           <p>GHASH is a <em>polynomial in H</em>, so this is one polynomial equation in the single unknown H over GF(2¹²⁸). Finding its roots yields a small set of candidate values for H — this is Joux's <strong>"forbidden attack."</strong> Recovering H also exposes the mask, after which the attacker can <strong>forge valid tags for arbitrary ciphertexts under that nonce</strong> — total integrity failure. This is not theoretical: a 2016 survey (Böck, Zauner, Devlin et al.) found production HTTPS servers reusing AES-GCM nonces, making them vulnerable to exactly this attack.</p>
+          <p class="tag-note">The <a href="#section-b">Live Attack Demo</a> below actually performs this: with the nonce reused it encrypts two single-block probes, recovers H from their ciphertexts and tags alone (using the closed-form single-block case <code>T₁ ⊕ T₂ = (C₁ ⊕ C₂)·H²</code>), then forges a valid tag that the real AES-GCM decryptor accepts.</p>
         </div>
 
         <div class="card">

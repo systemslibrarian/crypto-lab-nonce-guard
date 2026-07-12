@@ -10,6 +10,7 @@ import {
   xorToReadable,
   textToBytes,
   getSIVTagForDemo,
+  runForbiddenAttack,
 } from './crypto.ts';
 
 // ── Theme toggle ──
@@ -83,6 +84,13 @@ let rawKey: Uint8Array | null = null;
 let msg1Text = '';
 let msg2Text = '';
 
+// Shared nonce plumbing: both schemes need a pair of nonces where reuse means
+// nonce2 === nonce1. Centralising it keeps the two schemes provably in sync.
+function noncePair(sameNonce: boolean): { nonce1: Uint8Array; nonce2: Uint8Array } {
+  const nonce1 = generateNonce();
+  return { nonce1, nonce2: sameNonce ? nonce1 : generateNonce() };
+}
+
 async function doEncrypt(): Promise<void> {
   const msg1El = document.getElementById('msg1') as HTMLTextAreaElement;
   const msg2El = document.getElementById('msg2') as HTMLTextAreaElement;
@@ -100,13 +108,12 @@ async function doEncrypt(): Promise<void> {
   const gcmKey = await importGCMKey(rawKey);
 
   // GCM
-  const nonceGCM1 = generateNonce();
-  const nonceGCM2 = sameNonce ? nonceGCM1 : generateNonce();
-  const gcm1 = await encryptGCM(gcmKey, nonceGCM1, pt1);
-  const gcm2 = await encryptGCM(gcmKey, nonceGCM2, pt2);
+  const gcmNonces = noncePair(sameNonce);
+  const gcm1 = await encryptGCM(gcmKey, gcmNonces.nonce1, pt1);
+  const gcm2 = await encryptGCM(gcmKey, gcmNonces.nonce2, pt2);
   gcmResult = {
-    nonce1: nonceGCM1,
-    nonce2: nonceGCM2,
+    nonce1: gcmNonces.nonce1,
+    nonce2: gcmNonces.nonce2,
     ct1: gcm1.ciphertext,
     ct2: gcm2.ciphertext,
     tag1: gcm1.tag,
@@ -115,13 +122,12 @@ async function doEncrypt(): Promise<void> {
   };
 
   // SIV
-  const nonceSIV1 = generateNonce();
-  const nonceSIV2 = sameNonce ? nonceSIV1 : generateNonce();
-  const siv1 = encryptSIV(rawKey, nonceSIV1, pt1);
-  const siv2 = encryptSIV(rawKey, nonceSIV2, pt2);
+  const sivNonces = noncePair(sameNonce);
+  const siv1 = encryptSIV(rawKey, sivNonces.nonce1, pt1);
+  const siv2 = encryptSIV(rawKey, sivNonces.nonce2, pt2);
   sivResult = {
-    nonce1: nonceSIV1,
-    nonce2: nonceSIV2,
+    nonce1: sivNonces.nonce1,
+    nonce2: sivNonces.nonce2,
     ct1: siv1.ciphertext,
     ct2: siv2.ciphertext,
     tag1: siv1.tag,
@@ -187,16 +193,57 @@ function doAttack(): void {
     return;
   }
 
-  // GCM: XOR attack works
+  // ── GCM Level 1: keystream reuse (confidentiality) — real XOR recovery ──
   const gcmXor = xorBytes(gcmResult.ct1, gcmResult.ct2);
+
+  // ── GCM Level 2: forbidden attack (integrity) — really recover H & forge ──
+  // Run on the demo's own reused (key, nonce). This uses two fixed single-block
+  // probes so the closed-form GF(2¹²⁸) solver applies; the key and nonce are
+  // the exact pair reused above.
+  let integrityHtml = '';
+  if (rawKey) {
+    try {
+      const atk = runForbiddenAttack(rawKey, gcmResult.nonce1);
+      const recoveredOk = atk.recovered && atk.forgeryAccepted;
+      integrityHtml = `
+        <h4>Level 2 — Authentication key recovery (Joux's forbidden attack)</h4>
+        <p class="tag-note">Run on two 16-byte probes encrypted under this same reused nonce. The attacker sees only their (ciphertext, tag) pairs.</p>
+        ${hexBlock('Recovered H (from ciphertexts + tags only)', toHex(atk.recoveredH))}
+        ${hexBlock('True H = AES-256(key, 0¹²⁸) (ground truth)', toHex(atk.trueH))}
+        ${
+          atk.recovered
+            ? badge('broken', 'H RECOVERED EXACTLY — the GHASH authentication key is now known')
+            : badge('warning', 'H recovery did not match (unexpected)')
+        }
+        ${hexBlock('Forged ciphertext (attacker-chosen)', toHex(atk.forgedCiphertext, 32))}
+        ${hexBlock('Forged tag (computed from recovered H + mask)', toHex(atk.forgedTag))}
+        ${
+          atk.forgeryAccepted
+            ? badge('broken', 'FORGERY ACCEPTED — real AES-GCM verified this attacker-forged (ciphertext, tag)')
+            : badge('warning', 'forgery was rejected (unexpected)')
+        }
+        ${
+          recoveredOk
+            ? badge('broken', 'INTEGRITY BROKEN — attacker can forge valid tags for arbitrary ciphertexts under this nonce')
+            : ''
+        }
+      `;
+    } catch {
+      integrityHtml = badge(
+        'warning',
+        "INTEGRITY: this two-message case is outside the toy solver's single-block domain, but the forbidden attack applies in general",
+      );
+    }
+  }
+
   gcmAttack.innerHTML = `
-    <h4>Attack Results</h4>
+    <h4>Level 1 — Keystream reuse (confidentiality)</h4>
     ${hexBlock('C₁ ⊕ C₂', toHex(gcmXor))}
     ${hexBlock('Recovered P₁ ⊕ P₂', toHex(gcmXor))}
     <div class="output-label">DECODED (PRINTABLE)</div>
     <div class="hex-output">${xorToReadable(gcmXor)}</div>
     ${badge('broken', 'CONFIDENTIALITY BROKEN — XOR of plaintexts recovered')}
-    ${badge('broken', "INTEGRITY BROKEN — the authentication key H is recoverable from these two (ciphertext, tag) pairs (Joux's forbidden attack)")}
+    ${integrityHtml}
   `;
 
   // SIV: XOR does not reveal plaintext XOR
@@ -227,7 +274,7 @@ function doAttack(): void {
   sivAttack.innerHTML = sivHtml;
 
   announce(
-    'Attack complete. AES-GCM: confidentiality and integrity broken — the XOR of the two plaintexts was recovered and the authentication key is recoverable. ' +
+    'Attack complete. AES-GCM: confidentiality and integrity broken — the XOR of the two plaintexts was recovered, the GHASH authentication key H was recovered exactly, and a forged tag was accepted by real AES-GCM. ' +
       (identicalPt
         ? 'AES-GCM-SIV: only leaked that the two plaintexts were identical; integrity intact.'
         : 'AES-GCM-SIV: ciphertexts differ and no keystream was reused; integrity intact.'),

@@ -20,7 +20,14 @@ crypto-lab-nonce-guard is a browser-based comparison of AES-GCM (NIST SP 800-38D
 
 **[systemslibrarian.github.io/crypto-lab-nonce-guard](https://systemslibrarian.github.io/crypto-lab-nonce-guard/)**
 
-Enter two messages and toggle nonce reuse on. Click "Encrypt Both" to encrypt under both AES-GCM and AES-GCM-SIV with the same key and nonce. Click "Run Attack" to execute the XOR recovery attack — watch AES-GCM expose the XOR of both plaintexts while AES-GCM-SIV reveals nothing beyond whether the messages were identical.
+Enter two messages and toggle nonce reuse on. Click "Encrypt Both" to encrypt under both AES-GCM and AES-GCM-SIV with the same key and nonce. Click "Run Attack" to execute both failure levels against AES-GCM:
+
+- **Level 1 (confidentiality):** the XOR recovery attack exposes `P1 ⊕ P2` directly from the two ciphertexts.
+- **Level 2 (integrity):** Joux's forbidden attack is actually carried out — it encrypts two single-block probes under the reused nonce, recovers the GHASH authentication key `H` **from their ciphertexts and tags alone** (via the closed-form single-block relation `T1 ⊕ T2 = (C1 ⊕ C2)·H²` over GF(2¹²⁸)), then forges a valid tag that the **real AES-GCM decryptor accepts**. The recovered `H` is shown next to the true `H = AES-256(key, 0¹²⁸)` so you can see they match exactly.
+
+AES-GCM-SIV, under the same reused nonce, reveals nothing beyond whether the two messages were identical.
+
+The field arithmetic, GHASH, key-recovery, and forgery are covered by unit tests (`npm test`): the GF(2¹²⁸) implementation is cross-checked against `@noble/ciphers`' GHASH, and the attack tests assert `H` is recovered exactly and that a forged tag is accepted by the real primitive while a random tag is rejected.
 
 ## What Can Go Wrong
 
