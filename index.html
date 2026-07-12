@@ -141,9 +141,16 @@
 <!-- END crypto-lab shared header -->
     <a class="skip-link" href="#main">Skip to main content</a>
     <div id="app">
-      <header>
-        <h1>crypto-lab-nonce-guard</h1>
-        <p>AES-GCM vs AES-GCM-SIV — nonce misuse resistance compared</p>
+      <header class="cl-hero">
+        <div class="cl-hero-main">
+          <h1 class="cl-hero-title">Nonce Guard</h1>
+          <p class="cl-hero-sub">AES-GCM · AES-GCM-SIV · nonce misuse (AEAD)</p>
+          <p class="cl-hero-desc">Reuse a (key, nonce) pair and watch AES-GCM leak the plaintext XOR, recover its GHASH key via Joux's forbidden attack, and forge tags — while AES-GCM-SIV degrades gracefully.</p>
+        </div>
+        <aside class="cl-hero-why" aria-label="Why it matters">
+          <span class="cl-hero-why-label">WHY IT MATTERS</span>
+          <p class="cl-hero-why-text">Nonce reuse isn't hypothetical: production HTTPS servers have shipped it, handing attackers full plaintext recovery and tag forgery. Choosing a misuse-resistant AEAD is the difference between a bug and a total break.</p>
+        </aside>
         <button class="theme-toggle" type="button" id="theme-toggle" aria-label="Switch to light mode">🌙</button>
       </header>
 
