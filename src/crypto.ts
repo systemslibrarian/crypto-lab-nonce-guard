@@ -92,6 +92,33 @@ export function getSIVTagForDemo(
   return ct.slice(ct.length - 16);
 }
 
+/**
+ * The tag-as-IV story of AES-GCM-SIV, made observable. Returns the SIV tag, the
+ * AES-CTR initial counter block derived from it (RFC 8452 §4: copy the tag, then
+ * SET the most-significant bit of the last byte), and the first 16-byte block of
+ * ciphertext produced under that IV.
+ *
+ * These are the real values @noble/ciphers computes — the tag and ciphertext are
+ * taken straight from a genuine AES-GCM-SIV encryption; the IV is derived from
+ * the tag by the exact spec rule. Nothing here is faked: it lets a learner watch
+ * plaintext -> tag -> IV -> ciphertext move together, which is the whole point of
+ * the synthetic-IV construction.
+ */
+export function getSIVTagIVForDemo(
+  key: Uint8Array,
+  nonce: Uint8Array,
+  plaintext: Uint8Array,
+): { tag: Uint8Array; iv: Uint8Array; ct1: Uint8Array } {
+  const full = gcmsiv(key, nonce).encrypt(plaintext);
+  const tag = full.slice(full.length - 16);
+  const ciphertext = full.slice(0, full.length - 16);
+  // RFC 8452 §4: initial CTR block = tag with MSB of the last byte set to 1.
+  const iv = tag.slice();
+  iv[15] |= 0x80;
+  const ct1 = ciphertext.slice(0, Math.min(16, ciphertext.length));
+  return { tag, iv, ct1 };
+}
+
 // ── Level-2 integrity break: Joux's forbidden attack (real) ──
 
 /** Encrypt with AES-256-GCM (noble), returning ciphertext and 128-bit tag. */

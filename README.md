@@ -27,6 +27,16 @@ Enter two messages and toggle nonce reuse on. Click "Encrypt Both" to encrypt un
 
 AES-GCM-SIV, under the same reused nonce, reveals nothing beyond whether the two messages were identical.
 
+The page is ordered so you **break the scheme before you meet the math**: click first, then read why it happened. Every "why it cancels" step is shown as a two-stage animation (watch the shared keystream/mask fade out), never asserted as prose.
+
+## Exhibits
+
+1. **A — What is a Nonce?** The one rule (unique per key), the 96-bit nonce shown as 12 live hex bytes, and an on-ramp that sends you to break it before any theory.
+2. **B — See It Break (Live Attack Demo).** Encrypt two messages under both schemes with a reused nonce, then run the attack. Level 1 recovers `P1 ⊕ P2`; Level 2 recovers `H` and forges a tag the real AES-GCM decryptor accepts, with recovered `H` shown next to the independently computed ground truth. An attacker-capability box frames what you started with (two ciphertexts + tags) versus what you now hold (the auth key).
+3. **C — Why It Breaks.** The algebra behind what you just witnessed, with two **cancellation animations**: Level 1 shows the shared keystream fading out of `C1 ⊕ C2` to leave `P1 ⊕ P2`; Level 2 shows the shared mask fading out of `tag1 ⊕ tag2` to leave a pure equation in `H`. Heavy terms (GHASH, mask, GF(2¹²⁸)) get a one-line intuition gloss. An honest note clarifies that Level 2 uses two chosen 16-byte probes, **not** your Alice/Mallory messages.
+4. **D — SIV: Safe by Design.** The RFC 8452 synthetic-IV construction, why AES-encrypting the POLYVAL result kills the tag-cancellation trick, and an **interactive tag-as-IV panel**: type a message and watch plaintext → SIV tag → derived AES-CTR IV → first ciphertext block all change together. A "send the same message twice" vs "change one byte" toggle lets you produce the identical-plaintext leak (and its absence) yourself.
+5. **E — When to Use Which.** Side-by-side comparison table, three decision scenarios, and an honest list of AES-GCM-SIV's limitations (no FIPS approval, no online encryption, two passes).
+
 The field arithmetic, GHASH, key-recovery, and forgery are covered by unit tests (`npm test`): the GF(2¹²⁸) implementation is cross-checked against `@noble/ciphers`' GHASH, and the attack tests assert `H` is recovered exactly and that a forged tag is accepted by the real primitive while a random tag is rejected.
 
 ## What Can Go Wrong

@@ -9,7 +9,7 @@ import {
   toHex,
   xorToReadable,
   textToBytes,
-  getSIVTagForDemo,
+  getSIVTagIVForDemo,
   runForbiddenAttack,
 } from './crypto.ts';
 
@@ -227,6 +227,15 @@ function doAttack(): void {
             ? badge('broken', 'INTEGRITY BROKEN — attacker can forge valid tags for arbitrary ciphertexts under this nonce')
             : ''
         }
+        ${
+          recoveredOk
+            ? `<div class="threat-box" role="note" aria-label="Attacker capability summary">
+                 <p class="threat-title">What the attacker just gained</p>
+                 <p><strong>Started with:</strong> two intercepted ciphertexts and their tags, captured off the wire under a reused nonce. No key, no plaintext.</p>
+                 <p class="threat-then"><strong>Now holds:</strong> the GHASH authentication key H itself — so they can stamp a valid tag on <em>any</em> message under this nonce, and real AES-GCM will accept it (proven above). This is the break the 2016 HTTPS-server survey found live in production.</p>
+               </div>`
+            : ''
+        }
       `;
     } catch {
       integrityHtml = badge(
@@ -281,24 +290,140 @@ function doAttack(): void {
   );
 }
 
-// ── Section C: Interactive SIV tag demo ──
+// ── Section C: Cancellation visualizers (the shared term cancels) ──
+// Each button toggles the .is-cancelled state on its viz, fading the shared
+// keystream/mask so the learner watches the algebra collapse. Toggling back
+// restores it so they can replay. State is conveyed by text + the caption's
+// aria-live announcement, never colour alone.
+function initCancelViz(): void {
+  const setup = (
+    btnId: string,
+    startCaption: string,
+    doneCaption: string,
+    replayLabel: string,
+    cancelLabel: string,
+  ): void => {
+    const btn = document.getElementById(btnId) as HTMLButtonElement | null;
+    if (!btn) return;
+    const caption = document.getElementById(
+      btn.getAttribute('aria-describedby') ?? '',
+    );
+    const viz = btn
+      .closest('.card')
+      ?.querySelector('.cancel-viz') as HTMLElement | null;
+    if (!viz) return;
+    btn.addEventListener('click', () => {
+      const cancelled = viz.classList.toggle('is-cancelled');
+      btn.textContent = cancelled ? replayLabel : cancelLabel;
+      if (caption) caption.textContent = cancelled ? doneCaption : startCaption;
+    });
+  };
+
+  setup(
+    'cancel-l1-btn',
+    'The same keystream (highlighted) sits in both ciphertexts.',
+    'keystream ⊕ keystream = 0 — it cancelled. What remains is P₁ ⊕ P₂, no key needed.',
+    'Replay ↺',
+    'Cancel the shared keystream ▶',
+  );
+  setup(
+    'cancel-l2-btn',
+    'The same mask (highlighted) sits in both tags.',
+    'mask ⊕ mask = 0 — it cancelled. What remains is a pure equation in H, which we solve.',
+    'Replay ↺',
+    'Cancel the shared mask ▶',
+  );
+}
+
+// ── Section D: Interactive tag-as-IV demo ──
+// Shows SIV's core safety property live: plaintext -> tag -> derived AES-CTR IV
+// -> first ciphertext block, all moving together. A same-vs-diff toggle lets the
+// learner produce the identical-plaintext leak (and its absence) themselves.
 function initSIVDemo(): void {
   const input = document.getElementById('siv-input') as HTMLInputElement;
   const output = document.getElementById('siv-tag-output')!;
+  const compareOut = document.getElementById('siv-compare-output')!;
+  const modeSame = document.getElementById('siv-mode-same') as HTMLButtonElement;
+  const modeDiff = document.getElementById('siv-mode-diff') as HTMLButtonElement;
   const key = generateKey();
   const nonce = generateNonce();
+  let mode: 'same' | 'diff' = 'same';
 
-  function render(): void {
-    const pt = textToBytes(input.value || ' ');
-    const tag = getSIVTagForDemo(key, nonce, pt);
-    output.innerHTML = `
-      ${hexBlock('Plaintext (UTF-8 hex)', toHex(pt))}
+  // The plaintext -> tag -> IV -> ct chain for one message, as a labelled block.
+  function chain(title: string, textValue: string): string {
+    const pt = textToBytes(textValue || ' ');
+    const { tag, iv, ct1 } = getSIVTagIVForDemo(key, nonce, pt);
+    return `
+      <p class="output-label">${title}</p>
+      ${hexBlock('Plaintext (UTF-8 hex)', toHex(pt, 32))}
+      <div class="siv-chain-arrow" aria-hidden="true">↓ POLYVAL, then AES-encrypt</div>
       ${hexBlock('SIV Tag (128-bit)', toHex(tag))}
-      <p class="tag-note">Change any character above — the tag changes completely (avalanche effect).</p>
+      <div class="siv-chain-arrow" aria-hidden="true">↓ copy tag, set MSB of last byte → AES-CTR IV</div>
+      ${hexBlock('Derived AES-CTR IV', toHex(iv))}
+      <div class="siv-chain-arrow" aria-hidden="true">↓ AES-CTR keystream ⊕ plaintext</div>
+      ${hexBlock('First ciphertext block', toHex(ct1))}
     `;
   }
 
+  // Message B for the comparison: identical to A, or A with its last byte
+  // flipped (a genuine one-byte change), so the learner sees the consequence.
+  function messageB(a: string): string {
+    if (mode === 'same') return a;
+    if (a.length === 0) return 'A';
+    const flipped = a.slice(0, -1);
+    const last = a.charCodeAt(a.length - 1);
+    // Flip to a different printable char deterministically.
+    const alt = String.fromCharCode(last === 33 ? 46 : last - 1);
+    return flipped + alt;
+  }
+
+  function render(): void {
+    const aText = input.value;
+    output.innerHTML = chain('Message A', aText);
+
+    const bText = messageB(aText);
+    const aData = getSIVTagIVForDemo(key, nonce, textToBytes(aText || ' '));
+    const bData = getSIVTagIVForDemo(key, nonce, textToBytes(bText || ' '));
+    const identical = aText === bText;
+
+    let verdict: string;
+    if (identical) {
+      // Same plaintext -> same tag -> same IV -> same ciphertext: the ONLY leak.
+      verdict = badge(
+        'warning',
+        'IDENTICAL PLAINTEXT → IDENTICAL TAG → IDENTICAL IV → IDENTICAL CIPHERTEXT. This equality is the ONLY thing SIV leaks under nonce reuse.',
+      );
+    } else {
+      verdict = badge(
+        'safe',
+        'ONE BYTE CHANGED → the tag, the derived IV, and the ciphertext all change completely. Different plaintext never reuses the keystream.',
+      );
+    }
+
+    compareOut.innerHTML = `
+      ${chain('Message B', bText)}
+      <div class="siv-verdict">
+        <p class="output-label">A vs B</p>
+        ${hexBlock('Tag A', toHex(aData.tag))}
+        ${hexBlock('Tag B', toHex(bData.tag))}
+        ${verdict}
+      </div>
+    `;
+  }
+
+  function setMode(next: 'same' | 'diff'): void {
+    mode = next;
+    const sameActive = next === 'same';
+    modeSame.classList.toggle('is-active', sameActive);
+    modeDiff.classList.toggle('is-active', !sameActive);
+    modeSame.setAttribute('aria-checked', String(sameActive));
+    modeDiff.setAttribute('aria-checked', String(!sameActive));
+    render();
+  }
+
   input.addEventListener('input', render);
+  modeSame.addEventListener('click', () => setMode('same'));
+  modeDiff.addEventListener('click', () => setMode('diff'));
   render();
 }
 
@@ -306,6 +431,7 @@ function initSIVDemo(): void {
 function init(): void {
   initThemeToggle();
   initNonceDisplay();
+  initCancelViz();
   initSIVDemo();
 
   document.getElementById('btn-encrypt')!.addEventListener('click', doEncrypt);

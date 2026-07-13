@@ -44,6 +44,16 @@ async function runDemo(page: Page): Promise<void> {
   await expect(attack).toBeEnabled();
   await attack.click();
   await expect(page.locator('#gcm-attack-output .status-badge').first()).toBeVisible();
+
+  // Trigger the Section C cancellation visualizers into their cancelled state so
+  // the faded/struck-through terms are scanned, not just the resting state.
+  await page.locator('#cancel-l1-btn').click();
+  await page.locator('#cancel-l2-btn').click();
+
+  // Exercise the Section D tag-as-IV compare toggle so the "change one byte"
+  // verdict badge and its chain output are present when we scan.
+  await page.locator('#siv-mode-diff').click();
+  await expect(page.locator('#siv-compare-output .status-badge').first()).toBeVisible();
 }
 
 async function scan(page: Page): Promise<void> {

@@ -27,6 +27,8 @@
   --status-safe-text: #4ade80;
   --status-warning-text: #fbbf24;
   --status-broken-text: #f87171;
+  /* Ink for the shared cancel-viz term on its 15%-warning-over-surface-alt fill. */
+  --cancel-shared-ink: #fbbf24;
   --shadow: rgba(0, 0, 0, 0.5) 0 4px 12px;
   color-scheme: dark;
 }
@@ -53,6 +55,8 @@
   --status-safe-text: #12703b;
   --status-warning-text: #9a5b06;
   --status-broken-text: #b91c1c;
+  /* Deeper than --status-warning-text: the cancel-viz fill is more saturated. */
+  --cancel-shared-ink: #7a4805;
   --shadow: rgba(0, 0, 0, 0.1) 0 4px 12px;
   color-scheme: light;
 }
@@ -870,6 +874,242 @@ footer nav a {
     display: inline-flex;
     align-items: center;
   }
+}
+
+/* --- Section lead paragraph --- */
+.section-lead {
+  color: var(--text);
+  font-size: 0.98rem;
+  line-height: 1.65;
+  margin: 0 0 1.25rem;
+  max-width: 72ch;
+}
+
+/* --- Jargon gloss (intuition before rigor) --- */
+.gloss {
+  font-size: 0.88rem;
+  line-height: 1.6;
+  color: var(--text-muted);
+  background: var(--surface-alt);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 6px 6px 0;
+  padding: 0.6rem 0.85rem;
+  margin: 0 0 0.85rem;
+}
+.gloss strong { color: var(--text); }
+.gloss-inline { color: var(--text-muted); font-style: italic; }
+
+/* --- Cancellation visualizer (the actual lesson: shared term cancels) --- */
+.cancel-viz {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem;
+  margin: 1rem 0 0.75rem;
+  overflow-x: auto;
+}
+
+.cancel-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  font-family: var(--mono);
+  font-size: 0.92rem;
+  line-height: 1.4;
+}
+
+.cancel-op {
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+.cancel-term {
+  padding: 0.2rem 0.55rem;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+/* Neutral algebra terms (plaintext, ciphertext, polynomial) */
+.cancel-term.plain {
+  background: var(--code-bg);
+  border-color: var(--border);
+  color: var(--text);
+}
+.cancel-term.poly {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  color: var(--accent);
+}
+
+/* The SHARED term — the whole point. Distinct hue + border so it is not
+   color-alone; it also carries the word "keystream"/"mask" as its label. */
+.cancel-term.shared {
+  font-weight: 700;
+}
+.cancel-term.shared.ks,
+.cancel-term.shared.mask {
+  /* 15% warning tint over --surface-alt is more saturated than a badge's tint
+     over a card, so --status-warning-text only reaches ~4.0:1 here. Use a
+     dedicated deeper ink (measured >=5.6:1 both themes on this exact fill). */
+  background: color-mix(in srgb, var(--status-warning) 15%, var(--surface-alt));
+  border-color: color-mix(in srgb, var(--status-warning) 45%, transparent);
+  color: var(--cancel-shared-ink);
+}
+
+.cancel-rule {
+  height: 1px;
+  background: var(--border);
+  margin: 0.15rem 0;
+}
+
+.result-row .cancel-term.plain { font-weight: 700; }
+
+/* Fade-out state driven by JS: the shared term visibly cancels. The settled
+   cancelled state uses visibility:hidden (not a faded-but-visible low-opacity
+   text, which axe would read as a real contrast failure) so the resting UI has
+   no sub-threshold text; the opacity transition still plays the fade before it
+   settles. Reduced-motion/CI neutralize the transition and land on the clean
+   end state directly. */
+.cancel-fadeable {
+  transition: opacity 0.6s ease;
+}
+.cancel-viz.is-cancelled .cancel-fadeable {
+  opacity: 0;
+  visibility: hidden;
+}
+.cancel-term.gone {
+  display: none;
+  padding: 0.2rem 0.55rem;
+  border-radius: 5px;
+  border: 1px solid color-mix(in srgb, var(--status-safe) 45%, transparent);
+  background: color-mix(in srgb, var(--status-safe) 15%, var(--surface-alt));
+  color: var(--status-safe-text);
+  font-weight: 700;
+}
+.cancel-viz.is-cancelled .cancel-term.gone {
+  display: inline;
+}
+
+.cancel-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+
+.cancel-btn {
+  align-self: flex-start;
+}
+
+.cancel-caption {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-style: italic;
+  min-height: 1.4em;
+}
+
+/* Annotation under the tag equation (the mask bracket) */
+.eq-annot {
+  display: block;
+  color: var(--status-warning-text);
+  font-size: 0.8rem;
+  margin-top: 0.15rem;
+  /* align the bracket roughly under the mask term */
+  padding-left: 14ch;
+}
+@media (max-width: 480px) {
+  .eq-annot { padding-left: 0; }
+}
+
+/* --- Probe / message clarification note --- */
+.probe-note {
+  background: color-mix(in srgb, var(--status-warning) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--status-warning) 35%, transparent);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin-top: 1rem;
+}
+.probe-note p { margin: 0; font-size: 0.9rem; line-height: 1.6; }
+
+/* --- Attacker framing box (Section B output) --- */
+.threat-box {
+  background: color-mix(in srgb, var(--status-broken) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--status-broken) 35%, transparent);
+  border-radius: 8px;
+  padding: 0.75rem 0.9rem;
+  margin-top: 0.85rem;
+}
+.threat-box .threat-title {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--status-broken-text);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 0.4rem;
+}
+.threat-box p { margin: 0.3rem 0 0; font-size: 0.88rem; line-height: 1.6; }
+.threat-box .threat-then { color: var(--text); }
+
+/* --- SIV tag-as-IV live wiring (Section D3) --- */
+.siv-chain-row {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.4rem 0.75rem;
+  align-items: baseline;
+  margin: 0.4rem 0;
+}
+.siv-chain-label {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.siv-chain-arrow {
+  text-align: center;
+  color: var(--accent);
+  font-weight: 700;
+  margin: 0.1rem 0;
+}
+.siv-changed {
+  color: var(--status-warning-text);
+  font-weight: 700;
+}
+
+.siv-compare-controls { margin-top: 1.25rem; }
+
+.chip-toggle {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.4rem 0.75rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text);
+  cursor: pointer;
+  min-height: 44px;
+}
+.chip-toggle.is-active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
+}
+.chip-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.siv-verdict {
+  margin-top: 0.75rem;
 }
 
 /* --- Reduced motion (ADA) --- */
