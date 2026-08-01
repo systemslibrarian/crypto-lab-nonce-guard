@@ -49,7 +49,7 @@ The field arithmetic, GHASH, key-recovery, and forgery are covered by unit tests
 
 ## Real-World Usage
 
-- **TLS 1.3 (RFC 8446):** AES-256-GCM is a mandatory-to-implement cipher suite, with nonce derived from a counter XORed with a per-record mask to guarantee uniqueness.
+- **TLS 1.3 (RFC 8446 §9.1):** AES-128-GCM (`TLS_AES_128_GCM_SHA256`) is the mandatory-to-implement cipher suite and AES-256-GCM (`TLS_AES_256_GCM_SHA384`) is SHOULD-implement, with nonce derived from a counter XORed with a per-record mask to guarantee uniqueness.
 - **QUIC (RFC 9001):** uses AES-GCM with packet number as nonce; Google's QUIC experiments evaluated AES-GCM-SIV for contexts where packet number coordination was complex.
 - **Google Tink:** uses AES-GCM-SIV for key wrapping in its key management library, citing nonce misuse resistance as the primary motivation.
 - **WireGuard:** uses ChaCha20-Poly1305 rather than AES-GCM, partly to avoid nonce management complexity on devices without AES-NI.
@@ -73,5 +73,7 @@ npm run dev
 - [crypto-lab-padding-oracle](https://systemslibrarian.github.io/crypto-lab-padding-oracle/) — another AEAD/mode misuse attack (CBC padding oracle).
 
 ---
+
+*One of 170+ browser demos in the [Crypto Lab](https://crypto-lab.systemslibrarian.dev/) suite.*
 
 *"So whether you eat or drink or whatever you do, do it all for the glory of God." — 1 Corinthians 10:31*
