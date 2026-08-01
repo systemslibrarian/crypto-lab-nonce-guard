@@ -113,6 +113,13 @@ body {
   top: 0;
 }
 
+/* The dark theme's --accent (#60a5fa) is a light blue; #fff on it is only
+   2.54:1, failing WCAG 1.4.3. Near-black text on the same fill is 7.36:1.
+   The light --accent (#1d4ed8) is dark enough that #fff clears at 6.70:1. */
+[data-theme="dark"] .skip-link {
+  color: #0b1220;
+}
+
 /* --- Layout --- */
 #app {
   max-width: 1100px;
