@@ -42,7 +42,7 @@ The field arithmetic, GHASH, key-recovery, and forgery are covered by unit tests
 ## What Can Go Wrong
 
 - **Nonce reuse in AES-GCM:** reusing any (key, nonce) pair allows an attacker with two ciphertexts to recover `P1 ⊕ P2` and, via Joux's "forbidden attack," solve a polynomial equation over GF(2¹²⁸) for candidate GHASH keys H — enabling tag forgery under that nonce.
-- **Random nonce collision:** using random 96-bit nonces with AES-GCM risks collision after ~2³² messages per key (birthday bound). Rotate keys well before this limit.
+- **Random nonce collision:** with randomly generated 96-bit nonces, NIST SP 800-38D §8.3 caps AES-GCM at 2³² invocations per key — the limit that holds the probability of a repeated IV at or below the 2⁻³² bound required by §8, and deliberately far stricter than the ~2⁴⁸ birthday bound of a 96-bit space. Rotate keys well before this limit.
 - **Missing AAD binding:** failing to include the correct Additional Authenticated Data allows an attacker to swap AAD contexts (e.g., replay an old ciphertext in a new session).
 - **AES-GCM-SIV identical plaintext leak:** nonce reuse with identical plaintexts produces identical ciphertexts, leaking that the same message was sent twice — relevant in low-entropy message spaces.
 - **Truncated tags:** AES-GCM allows tags shorter than 128 bits. Tags below 96 bits are vulnerable to forgery by online guessing. Always use 128-bit tags.
@@ -51,7 +51,7 @@ The field arithmetic, GHASH, key-recovery, and forgery are covered by unit tests
 
 - **TLS 1.3 (RFC 8446 §9.1):** AES-128-GCM (`TLS_AES_128_GCM_SHA256`) is the mandatory-to-implement cipher suite and AES-256-GCM (`TLS_AES_256_GCM_SHA384`) is SHOULD-implement, with nonce derived from a counter XORed with a per-record mask to guarantee uniqueness.
 - **QUIC (RFC 9001):** uses AES-GCM with packet number as nonce; Google's QUIC experiments evaluated AES-GCM-SIV for contexts where packet number coordination was complex.
-- **Google Tink:** uses AES-GCM-SIV for key wrapping in its key management library, citing nonce misuse resistance as the primary motivation.
+- **Google Tink:** offers AES-GCM-SIV (`AES128_GCM_SIV`, `AES256_GCM_SIV`) as a supported AEAD key type, documenting that it fails less catastrophically than AES-GCM when nonce limits are exceeded — it may only leak that two messages are equal. It is also one of the accepted DEK types for KMS envelope encryption, though Tink recommends `AES128_GCM` for most uses.
 - **WireGuard:** uses ChaCha20-Poly1305 rather than AES-GCM, partly to avoid nonce management complexity on devices without AES-NI.
 - **AWS Encryption SDK:** uses AES-GCM with a message ID as part of the nonce, combined with a key commitment scheme to prevent multi-key attacks.
 
