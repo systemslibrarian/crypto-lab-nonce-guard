@@ -30,3 +30,37 @@ test('Level 2 identifies its fixed probes as separate from learner messages', as
   await expect(output).toContainText('two chosen fixed probes');
   await expect(output).not.toContainText('two intercepted ciphertexts');
 });
+
+test('the screen-reader announcement claims the integrity break only when the badges do', async ({
+  page,
+}) => {
+  await page.goto('.');
+  await page.locator('#btn-encrypt').click();
+  await page.locator('#btn-attack').click();
+
+  const output = page.locator('#gcm-attack-output');
+  const status = page.locator('#demo-status');
+  await expect(status).not.toBeEmpty();
+
+  // The visible badges are computed from the probe run; the announcement must
+  // report that same outcome rather than a fixed success story.
+  const brokeIntegrity = await output.getByText('INTEGRITY BROKEN').count();
+  if (brokeIntegrity > 0) {
+    await expect(output).toContainText('H RECOVERED EXACTLY');
+    await expect(output).toContainText('FORGERY ACCEPTED');
+    await expect(status).toContainText('recovered exactly');
+    await expect(status).toContainText('forged tag was accepted');
+  } else {
+    await expect(status).not.toContainText('H was recovered exactly');
+  }
+
+  // Unique nonces must never announce any break at all.
+  // The checkbox itself is visually hidden behind the styled switch, so drive
+  // it through its visible label the way a pointer or keyboard user would.
+  await page.locator('#nonce-toggle-label').click();
+  await expect(page.locator('#same-nonce')).not.toBeChecked();
+  await page.locator('#btn-encrypt').click();
+  await page.locator('#btn-attack').click();
+  await expect(status).toContainText('no attack is possible');
+  await expect(status).not.toContainText('recovered exactly');
+});

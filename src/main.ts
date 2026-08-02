@@ -201,10 +201,20 @@ function doAttack(): void {
   // probes so the closed-form GF(2¹²⁸) solver applies; the key and nonce are
   // the exact pair reused above.
   let integrityHtml = '';
+  // What the Level 2 probe actually achieved, so the announcement can state the
+  // same outcome the badges show rather than the outcome we expect.
+  let integrityOutcome = 'The Level 2 integrity probe did not run.';
   if (rawKey) {
     try {
       const atk = runForbiddenAttack(rawKey, gcmResult.nonce1);
       const recoveredOk = atk.recovered && atk.forgeryAccepted;
+      integrityOutcome = recoveredOk
+        ? 'Integrity is also broken: in a separate chosen-probe demonstration the GHASH authentication key H was recovered exactly and a forged tag was accepted by real AES-GCM.'
+        : `In the separate chosen-probe demonstration, H recovery ${
+            atk.recovered ? 'succeeded' : 'did not match'
+          } and the forged tag was ${
+            atk.forgeryAccepted ? 'accepted' : 'rejected'
+          }, so this run did not complete the integrity break.`;
       integrityHtml = `
         <h4>Level 2 — Separate chosen-probe demonstration</h4>
         <p class="tag-note"><strong>Not derived from your Message 1 or Message 2.</strong> This demonstration encrypts two fixed 16-byte probes under the same key and reused nonce so the closed-form Joux solver applies. The attacker sees only those probes' (ciphertext, tag) pairs.</p>
@@ -242,6 +252,8 @@ function doAttack(): void {
         'warning',
         "INTEGRITY: this two-message case is outside the toy solver's single-block domain, but the forbidden attack applies in general",
       );
+      integrityOutcome =
+        "The integrity probe is outside the toy solver's single-block domain for this input, so no key recovery or forgery was demonstrated in this run; the forbidden attack still applies in general.";
     }
   }
 
@@ -284,7 +296,9 @@ function doAttack(): void {
   sivAttack.innerHTML = sivHtml;
 
   announce(
-    'Attack complete. AES-GCM: confidentiality and integrity broken — the XOR of the two plaintexts was recovered, the GHASH authentication key H was recovered exactly, and a forged tag was accepted by real AES-GCM. ' +
+    'Attack complete. AES-GCM: confidentiality broken — the XOR of the two plaintexts was recovered. ' +
+      integrityOutcome +
+      ' ' +
       (identicalPt
         ? 'AES-GCM-SIV: only leaked that the two plaintexts were identical; integrity intact.'
         : 'AES-GCM-SIV: ciphertexts differ and no keystream was reused; integrity intact.'),
