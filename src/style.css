@@ -16,6 +16,7 @@
      button). White on #60a5fa is only 2.54:1; a near-black ink clears 4.5:1. */
   --on-accent: #0b1220;
   --border: #2e3140;
+  --control-border: #66788e;
   --code-bg: #1e2029;
   /* Swatch colours (borders, standalone glyphs) — bright for the dark canvas. */
   --status-safe: #22c55e;
@@ -45,6 +46,7 @@
   --accent: #1d4ed8;
   --on-accent: #ffffff;
   --border: #d1d5db;
+  --control-border: #6b7280;
   --code-bg: #e8eaed;
   /* Swatch colours (borders, standalone glyphs). */
   --status-safe: #16a34a;
@@ -408,7 +410,7 @@ textarea {
   font-size: 1rem;
   background: var(--code-bg);
   color: var(--text);
-  border: 1px solid var(--border);
+  border: 1px solid var(--control-border);
   border-radius: 6px;
   padding: 0.75rem;
   resize: vertical;
