@@ -206,8 +206,8 @@ function doAttack(): void {
       const atk = runForbiddenAttack(rawKey, gcmResult.nonce1);
       const recoveredOk = atk.recovered && atk.forgeryAccepted;
       integrityHtml = `
-        <h4>Level 2 — Authentication key recovery (Joux's forbidden attack)</h4>
-        <p class="tag-note">Run on two 16-byte probes encrypted under this same reused nonce. The attacker sees only their (ciphertext, tag) pairs.</p>
+        <h4>Level 2 — Separate chosen-probe demonstration</h4>
+        <p class="tag-note"><strong>Not derived from your Message 1 or Message 2.</strong> This demonstration encrypts two fixed 16-byte probes under the same key and reused nonce so the closed-form Joux solver applies. The attacker sees only those probes' (ciphertext, tag) pairs.</p>
         ${hexBlock('Recovered H (from ciphertexts + tags only)', toHex(atk.recoveredH))}
         ${hexBlock('True H = AES-256(key, 0¹²⁸) (ground truth)', toHex(atk.trueH))}
         ${
@@ -231,7 +231,7 @@ function doAttack(): void {
           recoveredOk
             ? `<div class="threat-box" role="note" aria-label="Attacker capability summary">
                  <p class="threat-title">What the attacker just gained</p>
-                 <p><strong>Started with:</strong> two intercepted ciphertexts and their tags, captured off the wire under a reused nonce. No key, no plaintext.</p>
+                 <p><strong>Started with:</strong> the ciphertexts and tags for two chosen fixed probes under a reused nonce. No key.</p>
                  <p class="threat-then"><strong>Now holds:</strong> the GHASH authentication key H itself — so they can stamp a valid tag on <em>any</em> message under this nonce, and real AES-GCM will accept it (proven above). This is the break the 2016 HTTPS-server survey found live in production.</p>
                </div>`
             : ''
@@ -249,8 +249,9 @@ function doAttack(): void {
     <h4>Level 1 — Keystream reuse (confidentiality)</h4>
     ${hexBlock('C₁ ⊕ C₂', toHex(gcmXor))}
     ${hexBlock('Recovered P₁ ⊕ P₂', toHex(gcmXor))}
-    <div class="output-label">DECODED (PRINTABLE)</div>
+    <div class="output-label">ASCII PREVIEW OF XOR BYTES (NOT DECODED PLAINTEXT)</div>
     <div class="hex-output">${xorToReadable(gcmXor)}</div>
+    <p class="tag-note">This is P₁ ⊕ P₂ rendered byte-by-byte: printable byte values appear as characters and all others as ·. It is not either plaintext. Recovering a message requires extra information, such as knowing or guessing the other plaintext.</p>
     ${badge('broken', 'CONFIDENTIALITY BROKEN — XOR of plaintexts recovered')}
     ${integrityHtml}
   `;

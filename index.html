@@ -194,7 +194,7 @@
       <!-- ============ SECTION B: Live Attack Demo (interaction FIRST) ============ -->
       <section id="section-b" aria-labelledby="section-b-heading">
         <h2 id="section-b-heading">B — See It Break (Live Attack Demo)</h2>
-        <p class="section-lead">Encrypt two messages under AES-GCM and AES-GCM-SIV with the same key. Leave the nonce toggle <strong>on</strong> to reuse the nonce, then run the attack. Watch AES-GCM leak the plaintext XOR and hand over its authentication key — while AES-GCM-SIV shrugs. <strong>Curiosity first:</strong> see the break here, then jump to <a href="#section-c">Section C</a> for <em>why</em> it happened.</p>
+        <p class="section-lead">Encrypt two messages under AES-GCM and AES-GCM-SIV with the same key. Leave the nonce toggle <strong>on</strong> to reuse the nonce, then run the attack. Level 1 uses your messages and reveals only their XOR, not either plaintext. Level 2 is a separate chosen-probe demonstration under the same key and nonce; it does not use your messages. <strong>Curiosity first:</strong> see the break here, then jump to <a href="#section-c">Section C</a> for <em>why</em> it happened.</p>
 
         <div class="controls" role="group" aria-label="Encryption controls">
           <div class="control-grid">
