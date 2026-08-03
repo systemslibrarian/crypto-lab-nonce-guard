@@ -11,7 +11,17 @@ import {
   textToBytes,
   getSIVTagIVForDemo,
   runForbiddenAttack,
+  LEVEL2_MAX_CT_BYTES,
 } from './crypto.ts';
+
+/** Escape learner-influenced text before it reaches innerHTML. */
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
 
 // ── Theme toggle ──
 function initThemeToggle(): void {
@@ -197,40 +207,86 @@ function doAttack(): void {
   const gcmXor = xorBytes(gcmResult.ct1, gcmResult.ct2);
 
   // ── GCM Level 2: forbidden attack (integrity) — really recover H & forge ──
-  // Run on the demo's own reused (key, nonce). This uses two fixed single-block
-  // probes so the closed-form GF(2¹²⁸) solver applies; the key and nonce are
-  // the exact pair reused above.
+  // Runs on the learner's OWN two messages: the solver sees only the two
+  // (ciphertext, tag) pairs rendered above and factors the resulting degree-n
+  // key equation over GF(2¹²⁸). Both failure branches below are reachable by
+  // typing — identical messages carry no information, and a message past the
+  // root-search budget is declined rather than faked.
   let integrityHtml = '';
-  // What the Level 2 probe actually achieved, so the announcement can state the
+  // What the Level 2 attack actually achieved, so the announcement can state the
   // same outcome the badges show rather than the outcome we expect.
-  let integrityOutcome = 'The Level 2 integrity probe did not run.';
+  let integrityOutcome = 'The Level 2 integrity attack did not run.';
   if (rawKey) {
-    try {
-      const atk = runForbiddenAttack(rawKey, gcmResult.nonce1);
-      const recoveredOk = atk.recovered && atk.forgeryAccepted;
-      integrityOutcome = recoveredOk
-        ? 'Integrity is also broken: in a separate chosen-probe demonstration the GHASH authentication key H was recovered exactly and a forged tag was accepted by real AES-GCM.'
-        : `In the separate chosen-probe demonstration, H recovery ${
-            atk.recovered ? 'succeeded' : 'did not match'
-          } and the forged tag was ${
-            atk.forgeryAccepted ? 'accepted' : 'rejected'
-          }, so this run did not complete the integrity break.`;
+    const atk = runForbiddenAttack(
+      rawKey,
+      gcmResult.nonce1,
+      gcmResult.ct1,
+      gcmResult.tag1,
+      gcmResult.ct2,
+      gcmResult.tag2,
+      textToBytes(msg1Text),
+    );
+    const recoveredOk = atk.recovered && atk.forgeryAccepted;
+    const preamble = `
+      <h4>Level 2 — Key recovery and forgery from your two messages</h4>
+      <p class="tag-note"><strong>Computed from your Message 1 and Message 2.</strong> The solver is handed only the four values above — Ciphertext 1, Tag 1, Ciphertext 2, Tag 2 — and builds the key equation GHASH<sub>H</sub>(C₁) ⊕ GHASH<sub>H</sub>(C₂) ⊕ (T₁ ⊕ T₂) = 0: a polynomial in the unknown H over GF(2¹²⁸) whose degree grows with your message length. It then factors that polynomial for every H satisfying it. The key never reaches the solver — it is used only to compute the ground-truth H shown for comparison, and to stand in for the receiver who checks a forged tag.</p>
+    `;
+
+    if (atk.failure === 'too-long') {
+      const deg = Math.ceil(Math.max(gcmResult.ct1.length, gcmResult.ct2.length) / 16) + 1;
+      integrityOutcome = `Level 2 declined to run: a message longer than ${LEVEL2_MAX_CT_BYTES} bytes puts the in-browser root search past its time budget. No key was recovered and no forgery was attempted.`;
       integrityHtml = `
-        <h4>Level 2 — Separate chosen-probe demonstration</h4>
-        <p class="tag-note"><strong>Not derived from your Message 1 or Message 2.</strong> This demonstration encrypts two fixed 16-byte probes under the same key and reused nonce so the closed-form Joux solver applies. The attacker sees only those probes' (ciphertext, tag) pairs.</p>
-        ${hexBlock('Recovered H (from ciphertexts + tags only)', toHex(atk.recoveredH))}
+        ${preamble}
+        ${badge('warning', `NOT RUN — a message is longer than ${LEVEL2_MAX_CT_BYTES} bytes`)}
+        <p class="tag-note">The key equation for these ciphertexts has degree ${deg}, and factoring it over GF(2¹²⁸) in a browser tab costs roughly the square of that. This lab caps the search at ${LEVEL2_MAX_CT_BYTES} bytes per message so the page stays responsive — a runtime budget of this demo, <strong>not</strong> a limit of Joux's attack, which is unaffected by message length. Shorten a message and run it again.</p>
+      `;
+    } else if (atk.failure === 'no-information') {
+      integrityOutcome =
+        'Level 2 recovered nothing: your two messages are identical, so the ciphertexts and tags are identical too, T₁ ⊕ T₂ = 0, and the key equation degenerates to 0 = 0 — satisfied by every possible H.';
+      integrityHtml = `
+        ${preamble}
+        ${badge('warning', 'NO KEY RECOVERED — the two ciphertexts are identical')}
+        <p class="tag-note">Both messages are the same, so C₁ = C₂ and T₁ = T₂. Every term of the key equation cancels and it becomes 0 = 0, which <em>every</em> element of GF(2¹²⁸) satisfies. The attacker has learned nothing about H. That is a real limit of the two-message attack, not a failure of the solver: put different text in the two boxes and the same run recovers H exactly.</p>
+      `;
+    } else if (atk.failure === 'no-keystream') {
+      integrityOutcome =
+        'Level 2 solved the key equation but had no keystream to build a forgery with, because Message 1 is empty.';
+      integrityHtml = `
+        ${preamble}
+        ${badge('warning', 'NO FORGERY ATTEMPTED — Message 1 is empty, so there is no known-plaintext keystream to reuse')}
+      `;
+    } else if (atk.failure) {
+      integrityOutcome = `Level 2 solved the key equation but no candidate produced a tag the receiver accepted (${atk.candidateCount} candidate${atk.candidateCount === 1 ? '' : 's'} tried).`;
+      integrityHtml = `
+        ${preamble}
+        ${badge('warning', 'NO FORGERY ACCEPTED — every candidate key was rejected by real AES-GCM')}
+      `;
+    } else {
+      integrityOutcome = recoveredOk
+        ? `Integrity is also broken: the GHASH authentication key H was recovered exactly from your two messages by factoring a degree ${atk.equationDegree} equation over GF(2¹²⁸), and a forged tag was accepted by real AES-GCM after ${atk.verificationQueries} verification quer${atk.verificationQueries === 1 ? 'y' : 'ies'}.`
+        : `H recovery ${atk.recovered ? 'succeeded' : 'did not match the true key'} and the forged tag was ${atk.forgeryAccepted ? 'accepted' : 'rejected'}, so this run did not complete the integrity break.`;
+      integrityHtml = `
+        ${preamble}
+        <div class="output-label">KEY EQUATION SOLVED</div>
+        <p class="tag-note">Degree <strong>${atk.equationDegree}</strong> over GF(2¹²⁸) — one term per 16-byte ciphertext block, plus the length block. The root search returned <strong>${atk.candidateCount}</strong> candidate key${atk.candidateCount === 1 ? '' : 's'}, and <strong>${atk.verificationQueries}</strong> forged tag${atk.verificationQueries === 1 ? '' : 's'} had to be checked by the receiver before one was accepted.</p>
+        ${hexBlock('Recovered H (from ciphertexts + tags only)', toHex(atk.recoveredH ?? new Uint8Array(16)))}
         ${hexBlock('True H = AES-256(key, 0¹²⁸) (ground truth)', toHex(atk.trueH))}
         ${
           atk.recovered
             ? badge('broken', 'H RECOVERED EXACTLY — the GHASH authentication key is now known')
-            : badge('warning', 'H recovery did not match (unexpected)')
+            : badge('warning', 'H recovery did not match the true key')
         }
-        ${hexBlock('Forged ciphertext (attacker-chosen)', toHex(atk.forgedCiphertext, 32))}
-        ${hexBlock('Forged tag (computed from recovered H + mask)', toHex(atk.forgedTag))}
+        ${hexBlock('Forged ciphertext (attacker payload under the reused keystream)', toHex(atk.forgedCiphertext, 32))}
+        ${hexBlock('Forged tag (computed from recovered H + mask)', toHex(atk.forgedTag ?? new Uint8Array(16)))}
         ${
           atk.forgeryAccepted
             ? badge('broken', 'FORGERY ACCEPTED — real AES-GCM verified this attacker-forged (ciphertext, tag)')
-            : badge('warning', 'forgery was rejected (unexpected)')
+            : badge('warning', 'forgery was rejected')
+        }
+        ${
+          atk.forgedDecryption
+            ? `<div class="output-label">WHAT THE RECEIVER DECRYPTS FROM THE FORGED BLOB</div><div class="hex-output">${escapeHtml(new TextDecoder().decode(atk.forgedDecryption))}</div>`
+            : ''
         }
         ${
           recoveredOk
@@ -241,21 +297,29 @@ function doAttack(): void {
           recoveredOk
             ? `<div class="threat-box" role="note" aria-label="Attacker capability summary">
                  <p class="threat-title">What the attacker just gained</p>
-                 <p><strong>Started with:</strong> the ciphertexts and tags for two chosen fixed probes under a reused nonce. No key.</p>
+                 <p><strong>Started with:</strong> the two ciphertexts and tags shown above, plus knowledge of Message 1 — the same known-plaintext assumption Level 1 already leans on. No key.</p>
                  <p class="threat-then"><strong>Now holds:</strong> the GHASH authentication key H itself — so they can stamp a valid tag on <em>any</em> message under this nonce, and real AES-GCM will accept it (proven above). This is the break the 2016 HTTPS-server survey found live in production.</p>
                </div>`
             : ''
         }
       `;
-    } catch {
-      integrityHtml = badge(
-        'warning',
-        "INTEGRITY: this two-message case is outside the toy solver's single-block domain, but the forbidden attack applies in general",
-      );
-      integrityOutcome =
-        "The integrity probe is outside the toy solver's single-block domain for this input, so no key recovery or forgery was demonstrated in this run; the forbidden attack still applies in general.";
     }
   }
+
+  // The "extra information" the note names, actually applied: XOR the recovered
+  // P₁ ⊕ P₂ against a known Message 1 and Message 2 falls out. Correctness is
+  // checked byte-for-byte against the plaintext the learner actually typed, over
+  // the overlap the keystream covers.
+  const pt1Bytes = textToBytes(msg1Text);
+  const pt2Bytes = textToBytes(msg2Text);
+  const overlap = Math.min(gcmXor.length, pt1Bytes.length);
+  const recoveredP2 = xorBytes(gcmXor.slice(0, overlap), pt1Bytes.slice(0, overlap));
+  const expectedP2 = pt2Bytes.slice(0, overlap);
+  const cribExact =
+    overlap > 0 &&
+    recoveredP2.length === expectedP2.length &&
+    recoveredP2.every((b, i) => b === expectedP2[i]);
+  const cribComplete = cribExact && overlap === pt2Bytes.length;
 
   gcmAttack.innerHTML = `
     <h4>Level 1 — Keystream reuse (confidentiality)</h4>
@@ -265,6 +329,16 @@ function doAttack(): void {
     <div class="hex-output">${xorToReadable(gcmXor)}</div>
     <p class="tag-note">This is P₁ ⊕ P₂ rendered byte-by-byte: printable byte values appear as characters and all others as ·. It is not either plaintext. Recovering a message requires extra information, such as knowing or guessing the other plaintext.</p>
     ${badge('broken', 'CONFIDENTIALITY BROKEN — XOR of plaintexts recovered')}
+    <div class="output-label">APPLYING THAT EXTRA INFORMATION: (P₁ ⊕ P₂) ⊕ P₁</div>
+    <p class="tag-note">Assume the attacker knows Message 1 — a crib, a fixed header, a guessed greeting. XORing it into the block above cancels P₁ and leaves Message 2 in the clear. The result below is compared byte-for-byte against the Message 2 you typed; the keystream only covers ${overlap} byte${overlap === 1 ? '' : 's'}, so only that much of Message 2 can be recovered this way.</p>
+    <div class="hex-output">${overlap > 0 ? escapeHtml(new TextDecoder().decode(recoveredP2)) : '(nothing — Message 1 is empty, so there is no crib)'}</div>
+    ${
+      cribComplete
+        ? badge('broken', 'MESSAGE 2 RECOVERED IN FULL — every byte matches the plaintext you typed')
+        : cribExact
+          ? badge('broken', `MESSAGE 2 PARTIALLY RECOVERED — the first ${overlap} of ${pt2Bytes.length} bytes match; the crib is shorter than the message`)
+          : badge('warning', 'NO PLAINTEXT RECOVERED — there is no known-plaintext overlap to XOR against')
+    }
     ${integrityHtml}
   `;
 
@@ -295,8 +369,16 @@ function doAttack(): void {
 
   sivAttack.innerHTML = sivHtml;
 
+  const cribOutcome = cribComplete
+    ? 'Message 2 was then recovered in full by XORing in a known Message 1, and every byte matches the plaintext typed into the form.'
+    : cribExact
+      ? `Message 2 was partially recovered by XORing in a known Message 1: the first ${overlap} of ${pt2Bytes.length} bytes match the plaintext typed into the form.`
+      : 'No plaintext could be recovered, because there is no known-plaintext overlap to XOR against.';
+
   announce(
     'Attack complete. AES-GCM: confidentiality broken — the XOR of the two plaintexts was recovered. ' +
+      cribOutcome +
+      ' ' +
       integrityOutcome +
       ' ' +
       (identicalPt

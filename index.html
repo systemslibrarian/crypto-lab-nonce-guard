@@ -194,7 +194,7 @@
       <!-- ============ SECTION B: Live Attack Demo (interaction FIRST) ============ -->
       <section id="section-b" aria-labelledby="section-b-heading">
         <h2 id="section-b-heading">B — See It Break (Live Attack Demo)</h2>
-        <p class="section-lead">Encrypt two messages under AES-GCM and AES-GCM-SIV with the same key. Leave the nonce toggle <strong>on</strong> to reuse the nonce, then run the attack. Level 1 uses your messages and reveals only their XOR, not either plaintext. Level 2 is a separate chosen-probe demonstration under the same key and nonce; it does not use your messages. <strong>Curiosity first:</strong> see the break here, then jump to <a href="#section-c">Section C</a> for <em>why</em> it happened.</p>
+        <p class="section-lead">Encrypt two messages under AES-GCM and AES-GCM-SIV with the same key. Leave the nonce toggle <strong>on</strong> to reuse the nonce, then run the attack. Level 1 uses your messages and reveals only their XOR, not either plaintext. Level 2 also runs on your messages: it factors the key equation their two (ciphertext, tag) pairs produce, recovers the GHASH key <code>H</code>, and forges a tag real AES-GCM accepts. <strong>Curiosity first:</strong> see the break here, then jump to <a href="#section-c">Section C</a> for <em>why</em> it happened.</p>
 
         <div class="controls" role="group" aria-label="Encryption controls">
           <div class="control-grid">
@@ -205,7 +205,7 @@
             </div>
             <div>
               <label for="msg2">Message 2</label>
-              <textarea id="msg2" rows="2" aria-describedby="msg2-desc">Transfer $9000 to Mallory</textarea>
+              <textarea id="msg2" rows="2" aria-describedby="msg2-desc">Wire $9000 to Mallory instead</textarea>
               <span id="msg2-desc" class="sr-only">Second plaintext message for encryption</span>
             </div>
           </div>
@@ -327,9 +327,14 @@
             <button type="button" class="secondary cancel-btn" id="cancel-l2-btn" aria-describedby="cancel-l2-caption">Cancel the shared mask ▶</button>
             <p id="cancel-l2-caption" class="cancel-caption" role="status" aria-live="polite">The same mask (highlighted) sits in both tags.</p>
           </div>
-          <p>With the mask gone, what remains is one equation in the single unknown <code>H</code> over GF(2¹²⁸). For two equal-length single blocks it collapses to the closed form <strong>tag₁ ⊕ tag₂ = (C₁ ⊕ C₂)·H²</strong>, solved directly as <code>H = √((tag₁ ⊕ tag₂)·(C₁ ⊕ C₂)⁻¹)</code>. (For longer messages it is a higher-degree polynomial whose roots give a small candidate set — Joux's <strong>"forbidden attack."</strong>) Recover <code>H</code> and you also recover the mask, and then you can <strong>forge a valid tag for any ciphertext under that nonce</strong>. Not theoretical: a 2016 survey (Böck, Zauner, Devlin et al.) found production HTTPS servers reusing AES-GCM nonces, exposed to exactly this.</p>
-          <div class="probe-note" role="note" aria-label="Important detail about the probes">
-            <p><strong>One honest detail about the demo.</strong> To recover <code>H</code> cleanly the attacker doesn't use your Alice/Mallory messages — it sends <strong>two chosen 16-byte probes</strong> (<code>forbidden-atk-01</code> / <code>forbidden-atk-02</code>) under the same reused nonce, because the closed-form solver above needs equal-length single blocks. Those probes are <em>not</em> your messages above; the reused <em>nonce</em> is what's shared. Any two chosen ciphertexts under the repeated nonce would do — real-world attackers pick convenient ones.</p>
+          <p>With the mask gone, what remains is one equation in the single unknown <code>H</code> over GF(2¹²⁸). The picture above shows the simplest shape of it — two equal-length single blocks, where it collapses to <strong>tag₁ ⊕ tag₂ = (C₁ ⊕ C₂)·H²</strong> and <code>H = √((tag₁ ⊕ tag₂)·(C₁ ⊕ C₂)⁻¹)</code> falls out directly. In general your messages span several blocks and the equation is the full polynomial:</p>
+          <div class="equation" role="math" aria-label="tag one XOR tag two equals delta C one times H to the n plus one, XOR delta C two times H to the n, and so on down to delta C n times H squared, XOR delta L times H">
+            tag₁ ⊕ tag₂ = ΔC₁·H<sup>n+1</sup> ⊕ ΔC₂·H<sup>n</sup> ⊕ … ⊕ ΔC<sub>n</sub>·H² ⊕ ΔL·H
+            <span class="eq-annot">└─ degree n+1 in the unknown H ─┘</span>
+          </div>
+          <p>— one term per 16-byte ciphertext block, plus the length block. That is a real polynomial, and recovering <code>H</code> means <strong>factoring it over GF(2¹²⁸)</strong>. Section B does exactly that on your two messages: gcd with <code>x<sup>2¹²⁸</sup> − x</code> isolates the roots that live in the field, then characteristic-2 Cantor–Zassenhaus trace splitting separates them. Usually one root comes back; sometimes a handful, and one forged tag per candidate settles which is the real key. Recover <code>H</code> and you also recover the mask, and then you can <strong>forge a valid tag for any ciphertext under that nonce</strong> — this is Joux's <strong>"forbidden attack."</strong> Not theoretical: a 2016 survey (Böck, Zauner, Devlin et al.) found production HTTPS servers reusing AES-GCM nonces, exposed to exactly this.</p>
+          <div class="probe-note" role="note" aria-label="Honest scope of the in-browser solver">
+            <p><strong>Two honest details about the demo.</strong> First, building a forged <em>ciphertext</em> — rather than just a valid tag over random bytes — assumes the attacker knows Message 1, the same known-plaintext assumption Level 1 already leans on, because the keystream is recovered as <code>C₁ ⊕ P₁</code>. Second, the root search runs in your browser tab and its cost grows with the square of the polynomial degree, so this lab caps it at <strong>512 bytes per message</strong>; past that Level 2 declines to run and says so instead of pretending. That cap is a budget of this page, not a limit of the attack. Type the same text into both boxes to meet the other, genuine limit: identical ciphertexts make the equation <code>0 = 0</code> and nothing at all is learned about <code>H</code>.</p>
           </div>
         </div>
       </section>

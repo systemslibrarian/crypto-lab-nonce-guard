@@ -1,6 +1,10 @@
 import { gcm, gcmsiv, unsafe } from '@noble/ciphers/aes.js';
 import { randomBytes } from '@noble/ciphers/utils.js';
-import { recoverGhashKey, forgeTag, type RecoveredKey } from './forbidden.ts';
+import {
+  forgeTag,
+  maskFromCandidate,
+  recoverGhashCandidates,
+} from './forbidden.ts';
 
 export { randomBytes };
 
@@ -131,90 +135,159 @@ export function encryptGCMNoble(
   return { ciphertext: ct.slice(0, ct.length - 16), tag: ct.slice(ct.length - 16) };
 }
 
+/**
+ * Upper bound on the ciphertext length the in-browser root search will take on.
+ * The key equation has degree ceil(len/16)+1, and factoring it over GF(2¹²⁸)
+ * costs roughly quadratically in that degree; 512 bytes (degree 33) lands
+ * around 1.5 s on a laptop, 1 KiB is already ~9 s. The cap is a runtime budget,
+ * not a limit of the attack, and the page says so.
+ */
+export const LEVEL2_MAX_CT_BYTES = 512;
+
+export type IntegrityFailure =
+  /** Both ciphertexts are the same, so T₁ ⊕ T₂ = 0 and the equation is 0 = 0. */
+  | 'no-information'
+  /** Roots exist but none of them forged a tag the receiver accepted. */
+  | 'no-candidate-verified'
+  /** The equation had no root in GF(2¹²⁸) (cannot happen for a genuine pair). */
+  | 'no-roots'
+  /** Messages longer than the in-browser root-search budget. */
+  | 'too-long'
+  /** Nothing to forge with: the known plaintext is empty. */
+  | 'no-keystream';
+
 export interface IntegrityBreakResult {
-  /** Two probe plaintexts (single 16-byte block) encrypted under the reused nonce. */
-  probe1: Uint8Array;
-  probe2: Uint8Array;
-  tag1: Uint8Array;
-  tag2: Uint8Array;
+  /** Degree of the key equation that was actually built and factored. */
+  equationDegree: number;
+  /** How many H values in GF(2¹²⁸) satisfy that equation. */
+  candidateCount: number;
+  /** How many forged tags the receiver had to check before one was accepted. */
+  verificationQueries: number;
   /** The GHASH key recovered purely from the two (ciphertext, tag) pairs. */
-  recoveredH: Uint8Array;
+  recoveredH: Uint8Array | null;
   /** The true H = E_K(0¹²⁸), computed independently, to prove the recovery is exact. */
   trueH: Uint8Array;
   recovered: boolean;
   /** A plaintext the attacker never legitimately encrypted. */
   forgedPlaintext: Uint8Array;
   forgedCiphertext: Uint8Array;
-  forgedTag: Uint8Array;
+  forgedTag: Uint8Array | null;
   /** Whether the REAL AES-GCM primitive accepted the forged (ciphertext, tag). */
   forgeryAccepted: boolean;
+  /** What real AES-GCM decryption returned for the forged blob, when accepted. */
+  forgedDecryption: Uint8Array | null;
+  failure?: IntegrityFailure;
 }
 
+/** The attacker's chosen payload, truncated to the keystream they can derive. */
+const FORGED_TEMPLATE = 'PWNED: nonce reuse forged this tag ................................';
+
 /**
- * Actually carry out Joux's forbidden attack on the demo's (key, nonce): encrypt
- * two single-block probes under the reused nonce, recover the GHASH key H from
- * only their (ciphertext, tag) pairs, then forge a valid tag for an
- * attacker-chosen ciphertext and prove real AES-GCM accepts it.
+ * Carry out Joux's forbidden attack against the learner's OWN two messages.
  *
- * Uses fixed 16-byte probes because the closed-form solver targets the
- * single-block case; the key and nonce are the demo's own reused pair.
+ * The only inputs the attack consumes are the four values an eavesdropper sees
+ * — `ct1`, `tag1`, `ct2`, `tag2` — plus knowledge of the first plaintext, the
+ * standard known-plaintext assumption that keystream reuse already hands over
+ * in Level 1. Concretely:
+ *
+ *   1. Build the key equation GHASH_H(C₁) ⊕ GHASH_H(C₂) ⊕ (T₁ ⊕ T₂) = 0 as a
+ *      polynomial in the unknown H, of degree ceil(len/16)+1.
+ *   2. Factor it over GF(2¹²⁸) for every candidate H (`recoverGhashCandidates`).
+ *   3. Recover the keystream as C₁ ⊕ P₁ and encrypt a chosen payload with it.
+ *   4. For each candidate H, derive the per-nonce mask from (C₁, T₁), forge a
+ *      tag, and hand the blob to the REAL AES-GCM decryptor. One accepted
+ *      verification query settles which candidate was the real H.
+ *
+ * `key` is used for exactly two things, neither of them part of the attack:
+ * computing the ground-truth H for display, and standing in for the receiver
+ * who checks the forged tags. The recovery itself never sees it.
  */
 export function runForbiddenAttack(
   key: Uint8Array,
   nonce: Uint8Array,
+  ct1: Uint8Array,
+  tag1: Uint8Array,
+  ct2: Uint8Array,
+  tag2: Uint8Array,
+  knownPlaintext1: Uint8Array,
 ): IntegrityBreakResult {
-  const probe1 = textToBytes('forbidden-atk-01'); // 16 bytes, one block
-  const probe2 = textToBytes('forbidden-atk-02');
-
-  const e1 = encryptGCMNoble(key, nonce, probe1);
-  const e2 = encryptGCMNoble(key, nonce, probe2);
-
-  // Attacker sees only ciphertexts and tags — recovers H and the mask.
-  const recovered: RecoveredKey = recoverGhashKey(
-    e1.ciphertext,
-    e1.tag,
-    e2.ciphertext,
-    e2.tag,
-  );
-
-  // Independent ground truth for display: true H = E_K(0¹²⁸) obtained by
-  // encrypting an all-zero block (GCM tag of empty message uses this H).
   const trueH = trueGhashKey(key);
-  const recoveredOk = bytesEqual(recovered.H, trueH);
+  const base: IntegrityBreakResult = {
+    equationDegree: 0,
+    candidateCount: 0,
+    verificationQueries: 0,
+    recoveredH: null,
+    trueH,
+    recovered: false,
+    forgedPlaintext: new Uint8Array(0),
+    forgedCiphertext: new Uint8Array(0),
+    forgedTag: null,
+    forgeryAccepted: false,
+    forgedDecryption: null,
+  };
 
-  // Forge a valid tag for a message the attacker chose but never encrypted.
-  // Under the reused nonce the keystream is fixed, so a genuine ciphertext for
-  // any chosen plaintext is P ⊕ E_K(0). Combined with the forged tag from the
-  // recovered mask, this is a complete (ciphertext, tag) forgery.
-  const forgedPlaintext = textToBytes('PWNED: nonce reuse forged this tag');
-  const keystream = encryptGCMNoble(key, nonce, new Uint8Array(forgedPlaintext.length)).ciphertext;
+  if (ct1.length > LEVEL2_MAX_CT_BYTES || ct2.length > LEVEL2_MAX_CT_BYTES) {
+    return { ...base, failure: 'too-long' };
+  }
+
+  const solved = recoverGhashCandidates(ct1, tag1, ct2, tag2);
+  if (solved.failure) {
+    return { ...base, equationDegree: solved.degree, failure: solved.failure };
+  }
+
+  // The keystream the attacker can derive without the key: C₁ ⊕ P₁.
+  const keystream = xorBytes(ct1, knownPlaintext1);
+  if (keystream.length === 0) {
+    return {
+      ...base,
+      equationDegree: solved.degree,
+      candidateCount: solved.candidates.length,
+      failure: 'no-keystream',
+    };
+  }
+
+  const payload = textToBytes(FORGED_TEMPLATE).slice(0, keystream.length);
+  const forgedPlaintext = payload;
   const forgedCiphertext = xorBytes(forgedPlaintext, keystream);
-  const forgedTag = forgeTag(recovered, forgedCiphertext);
 
-  // Prove it: hand the forged (ciphertext ‖ tag) to the REAL AES-GCM decryptor.
-  const blob = new Uint8Array(forgedCiphertext.length + 16);
-  blob.set(forgedCiphertext, 0);
-  blob.set(forgedTag, forgedCiphertext.length);
-  let forgeryAccepted = false;
-  try {
-    gcm(key, nonce).decrypt(blob);
-    forgeryAccepted = true;
-  } catch {
-    forgeryAccepted = false;
+  // One verification query per candidate until the receiver accepts one. With
+  // a single candidate this is one query; with several it is at most that many.
+  let queries = 0;
+  for (const H of solved.candidates) {
+    const mask = maskFromCandidate(H, ct1, tag1);
+    const forgedTag = forgeTag({ H, mask }, forgedCiphertext);
+    const blob = new Uint8Array(forgedCiphertext.length + 16);
+    blob.set(forgedCiphertext, 0);
+    blob.set(forgedTag, forgedCiphertext.length);
+    queries++;
+    try {
+      const opened = gcm(key, nonce).decrypt(blob);
+      return {
+        equationDegree: solved.degree,
+        candidateCount: solved.candidates.length,
+        verificationQueries: queries,
+        recoveredH: H,
+        trueH,
+        recovered: bytesEqual(H, trueH),
+        forgedPlaintext,
+        forgedCiphertext,
+        forgedTag,
+        forgeryAccepted: true,
+        forgedDecryption: opened,
+      };
+    } catch {
+      // Wrong candidate — the receiver rejected the tag. Try the next root.
+    }
   }
 
   return {
-    probe1,
-    probe2,
-    tag1: e1.tag,
-    tag2: e2.tag,
-    recoveredH: recovered.H,
-    trueH,
-    recovered: recoveredOk,
+    ...base,
+    equationDegree: solved.degree,
+    candidateCount: solved.candidates.length,
+    verificationQueries: queries,
     forgedPlaintext,
     forgedCiphertext,
-    forgedTag,
-    forgeryAccepted,
+    failure: 'no-candidate-verified',
   };
 }
 

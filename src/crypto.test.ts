@@ -7,6 +7,7 @@ import {
   xorBytes,
   textToBytes,
   runForbiddenAttack,
+  LEVEL2_MAX_CT_BYTES,
 } from './crypto.ts';
 
 const hex = (b: Uint8Array) =>
@@ -81,12 +82,65 @@ describe('AES-GCM-SIV nonce misuse resistance', () => {
 });
 
 describe('runForbiddenAttack integration (drives the interactive demo)', () => {
-  it('recovers H and lands an accepted forgery for the demo key/nonce', () => {
+  /** Encrypt both messages under one reused (key, nonce), as the demo does. */
+  function observe(key: Uint8Array, nonce: Uint8Array, m1: string, m2: string) {
+    const p1 = textToBytes(m1);
+    const e1 = encryptGCMNoble(key, nonce, p1);
+    const e2 = encryptGCMNoble(key, nonce, textToBytes(m2));
+    return { p1, e1, e2 };
+  }
+
+  it('recovers H from the learner-supplied messages and lands an accepted forgery', () => {
     const key = generateKey();
     const nonce = generateNonce();
-    const r = runForbiddenAttack(key, nonce);
+    const { p1, e1, e2 } = observe(
+      key,
+      nonce,
+      'Transfer $1000 to Alice',
+      'Wire nine thousand dollars to Mallory instead, quickly',
+    );
+    const r = runForbiddenAttack(key, nonce, e1.ciphertext, e1.tag, e2.ciphertext, e2.tag, p1);
+    expect(r.failure).toBeUndefined();
+    // Degree is ceil(len/16)+1 for the longer message: 54 bytes -> 4 blocks -> 5.
+    expect(r.equationDegree).toBe(5);
+    expect(r.candidateCount).toBeGreaterThanOrEqual(1);
+    expect(r.verificationQueries).toBeGreaterThanOrEqual(1);
+    expect(r.verificationQueries).toBeLessThanOrEqual(r.candidateCount);
     expect(r.recovered).toBe(true);
-    expect(hex(r.recoveredH)).toBe(hex(r.trueH));
+    expect(hex(r.recoveredH!)).toBe(hex(r.trueH));
     expect(r.forgeryAccepted).toBe(true);
+    // The forged blob decrypts, under the real key, to the attacker's payload.
+    expect(hex(r.forgedDecryption!)).toBe(hex(r.forgedPlaintext));
+  });
+
+  it('works for messages of unequal length, which the closed-form solver cannot do', () => {
+    const key = generateKey();
+    const nonce = generateNonce();
+    const { p1, e1, e2 } = observe(key, nonce, 'short', 'a considerably longer second message');
+    expect(e1.ciphertext.length).not.toBe(e2.ciphertext.length);
+    const r = runForbiddenAttack(key, nonce, e1.ciphertext, e1.tag, e2.ciphertext, e2.tag, p1);
+    expect(r.recovered).toBe(true);
+    expect(r.forgeryAccepted).toBe(true);
+  });
+
+  it('reports no-information — not a bogus key — when both messages are identical', () => {
+    const key = generateKey();
+    const nonce = generateNonce();
+    const { p1, e1, e2 } = observe(key, nonce, 'same text', 'same text');
+    const r = runForbiddenAttack(key, nonce, e1.ciphertext, e1.tag, e2.ciphertext, e2.tag, p1);
+    expect(r.failure).toBe('no-information');
+    expect(r.recovered).toBe(false);
+    expect(r.forgeryAccepted).toBe(false);
+    expect(r.recoveredH).toBeNull();
+  });
+
+  it('declines messages past the in-browser root-search budget', () => {
+    const key = generateKey();
+    const nonce = generateNonce();
+    const long = 'x'.repeat(LEVEL2_MAX_CT_BYTES + 1);
+    const { p1, e1, e2 } = observe(key, nonce, long, `${long}y`);
+    const r = runForbiddenAttack(key, nonce, e1.ciphertext, e1.tag, e2.ciphertext, e2.tag, p1);
+    expect(r.failure).toBe('too-long');
+    expect(r.forgeryAccepted).toBe(false);
   });
 });

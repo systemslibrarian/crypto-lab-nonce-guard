@@ -32,6 +32,7 @@
  */
 
 import { bytesToField, fieldToBytes, gmul, ginv, gsqrt } from './gf128.ts';
+import { polyAdd, polyDeg, polyRoots, type Poly } from './gf128poly.ts';
 
 /**
  * GHASH_H over empty AAD and ciphertext `ct` (any length), returning the raw
@@ -110,4 +111,99 @@ export function forgeTag(
   const H = bytesToField(recovered.H);
   const mask = bytesToField(recovered.mask);
   return fieldToBytes(ghashH(H, forgedCiphertext) ^ mask);
+}
+
+// ── The general case: recover H from ANY two (ciphertext, tag) pairs ──
+
+/**
+ * GHASH_H(C) written as a POLYNOMIAL in the unknown H rather than evaluated at
+ * a known one. Unrolling the absorb loop of `ghashH`:
+ *
+ *     GHASH_H(C) = C₁·H^(n+1) ⊕ C₂·H^n ⊕ … ⊕ C_n·H² ⊕ L·H
+ *
+ * where C_i is the i-th 16-byte block (zero-padded) and L is the length block.
+ * Returned little-endian by degree: `p[i]` multiplies H^i.
+ */
+export function ghashPoly(ct: Uint8Array): Poly {
+  const nblk = Math.ceil(ct.length / 16);
+  const p: Poly = new Array(nblk + 2).fill(0n);
+  for (let i = 0; i < nblk; i++) {
+    const blk = new Uint8Array(16);
+    blk.set(ct.subarray(i * 16, Math.min((i + 1) * 16, ct.length)));
+    p[nblk + 1 - i] ^= bytesToField(blk);
+  }
+  const lenBlock = new Uint8Array(16);
+  new DataView(lenBlock.buffer).setBigUint64(8, BigInt(ct.length) * 8n, false);
+  p[1] ^= bytesToField(lenBlock);
+  return p;
+}
+
+/**
+ * The key equation of the forbidden attack for two (ciphertext, tag) pairs that
+ * collided on (key, nonce), as a polynomial whose roots include the real H:
+ *
+ *     f(H) = GHASH_H(C₁) ⊕ GHASH_H(C₂) ⊕ (T₁ ⊕ T₂) = 0
+ *
+ * Nothing here touches the key — only the four values an eavesdropper sees.
+ */
+export function forbiddenKeyEquation(
+  ct1: Uint8Array,
+  tag1: Uint8Array,
+  ct2: Uint8Array,
+  tag2: Uint8Array,
+): Poly {
+  const f = polyAdd(ghashPoly(ct1), ghashPoly(ct2));
+  const dT = bytesToField(tag1) ^ bytesToField(tag2);
+  return polyAdd(f, [dT]);
+}
+
+export type CandidateFailure = 'no-information' | 'no-roots';
+
+export interface CandidateRecovery {
+  /** Degree of the key equation actually solved (0 when it carried no information). */
+  degree: number;
+  /** Every H in GF(2¹²⁸) satisfying the equation, from a real root search. */
+  candidates: Uint8Array[];
+  /** Set when the equation could not narrow H at all, with the reason. */
+  failure?: CandidateFailure;
+}
+
+/**
+ * Solve the key equation for the candidate GHASH keys, using ONLY the two
+ * ciphertexts and their tags. Unlike `recoverGhashKey` this places no
+ * restriction on message length or equality of lengths: it builds the real
+ * degree-(n+1) polynomial and factors it over GF(2¹²⁸).
+ *
+ * The honest failure case is two IDENTICAL ciphertexts, where the equation
+ * collapses to 0 = 0: every field element satisfies it, so the attacker has
+ * learned nothing about H.
+ */
+export function recoverGhashCandidates(
+  ct1: Uint8Array,
+  tag1: Uint8Array,
+  ct2: Uint8Array,
+  tag2: Uint8Array,
+  rand: () => number = Math.random,
+): CandidateRecovery {
+  const f = forbiddenKeyEquation(ct1, tag1, ct2, tag2);
+  const degree = polyDeg(f);
+  if (degree < 1) {
+    // Either the zero polynomial (identical ciphertexts AND identical tags) or
+    // a nonzero constant (inconsistent, which cannot happen for a true pair).
+    return { degree: Math.max(degree, 0), candidates: [], failure: 'no-information' };
+  }
+  const roots = polyRoots(f, rand);
+  if (roots.length === 0) {
+    return { degree, candidates: [], failure: 'no-roots' };
+  }
+  return { degree, candidates: roots.map(fieldToBytes) };
+}
+
+/** The per-nonce mask E_K(J0) implied by a candidate H and one known pair. */
+export function maskFromCandidate(
+  H: Uint8Array,
+  ct: Uint8Array,
+  tag: Uint8Array,
+): Uint8Array {
+  return fieldToBytes(bytesToField(tag) ^ ghashH(bytesToField(H), ct));
 }
