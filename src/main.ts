@@ -49,11 +49,13 @@ function initNonceDisplay(): void {
   const container = document.getElementById('nonce-display');
   if (!container) return;
   const nonce = generateNonce();
+  // No aria-label on the spans. `aria-label` on a role-less <span> is
+  // PROHIBITED by ARIA and silently discarded, so the twelve labels never
+  // reached a screen reader at all — and each one only restated the hex the span
+  // already contains, inside a container that is `role="img"` with its own
+  // label, which makes the children presentational anyway.
   container.innerHTML = Array.from(nonce)
-    .map(
-      (b) =>
-        `<span class="nonce-byte" aria-label="byte ${b.toString(16).padStart(2, '0')}">${b.toString(16).padStart(2, '0')}</span>`,
-    )
+    .map((b) => `<span class="nonce-byte">${b.toString(16).padStart(2, '0')}</span>`)
     .join('');
 }
 

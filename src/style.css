@@ -439,8 +439,23 @@ label {
   margin: 1rem 0;
 }
 
-/* The visible toggle caption is a <label for> for the checkbox — reset the
-   generic block/muted label styling so it reads as inline body text. */
+/* One <label> now wraps the switch graphic and its caption, so it has to be the
+   flex row that `.toggle-row` used to be, and it has to undo the generic
+   `label { display: block; color: var(--text-muted); font-family: var(--mono) }`
+   styling that would otherwise apply to it. */
+.toggle-switch-label {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0;
+  font-family: var(--sans);
+  font-weight: 400;
+  color: var(--text);
+  cursor: pointer;
+}
+
+/* The caption is a <span> inside that label — reset the same generic styling in
+   case it is ever moved back out. */
 .toggle-text {
   display: inline;
   margin: 0;
@@ -470,7 +485,17 @@ label {
   position: absolute;
   cursor: pointer;
   inset: 0;
-  background: var(--border);
+  /* The track is BOTH the control's boundary and the surface the knob has to be
+     found against, and --border failed at both. Against the --surface panel it
+     was 1.32:1 dark / 1.47:1 light, and the knob (--surface) against the track
+     was the same pair — so in the OFF position the knob, which is the only
+     non-colour indication of the switch's state, was invisible. The ON position
+     was never affected, because --status-warning is bright; this defect existed
+     only in the state the page does NOT ship in, and only a drive that unchecks
+     the box reaches it.
+     --control-border gives 3.75:1 dark and 4.79:1 light for both measurements,
+     and the ON track keeps its 7.84:1 / 3.19:1 against the same knob. */
+  background: var(--control-border);
   border-radius: 24px;
   transition: background 0.2s;
 }
@@ -531,7 +556,14 @@ button.secondary {
   font-weight: 600;
   background: var(--surface-alt);
   color: var(--text);
-  border: 1px solid var(--border);
+  /* --control-border, not --border. A secondary button's fill is --surface-alt
+     on a --surface panel, which is 1.11:1 in dark and 1.09:1 in light: the fill
+     does not delineate it at all, so the border is the ONLY thing that marks
+     where the control is, and SC 1.4.11 asks that border for 3:1 against the
+     panel. --border is a SURFACE divider (1.32:1 dark, 1.47:1 light here) and
+     was never chosen to do this job; --control-border was, and measures 3.75:1
+     dark and 4.79:1 light on the same panel. */
+  border: 1px solid var(--control-border);
   border-radius: 6px;
   padding: 0.6rem 1.25rem;
   cursor: pointer;
@@ -848,7 +880,12 @@ footer nav a {
   font-size: 1rem;
   background: var(--code-bg);
   color: var(--text);
-  border: 1px solid var(--border);
+  /* Same token, same reason, as textarea directly above: this is a text field
+     and its edge is its only boundary. It took --border for years while the
+     otherwise identical `textarea` rule took --control-border, and the old
+     1.4.11 spec measured only the textarea — so the one control that had the
+     right token was the only one ever checked. */
+  border: 1px solid var(--control-border);
   border-radius: 6px;
   padding: 0.5rem 0.75rem;
   min-height: 44px;
@@ -1099,7 +1136,12 @@ footer nav a {
   font-weight: 600;
   padding: 0.4rem 0.75rem;
   border-radius: 6px;
-  border: 1px solid var(--border);
+  /* The INACTIVE chip is the one that has to be findable: the active one is
+     drawn with --accent and clears 3:1 easily, and a radio group where only the
+     selected option has a visible edge is a group whose alternatives are
+     invisible. --control-border takes the inactive edge from 1.32:1 to 3.75:1
+     in dark and 1.47:1 to 4.79:1 in light. */
+  border: 1px solid var(--control-border);
   background: var(--surface-alt);
   color: var(--text);
   cursor: pointer;

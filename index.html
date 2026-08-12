@@ -183,7 +183,7 @@
           <h3 id="a1-heading">A1 — The one rule</h3>
           <p>A <strong>nonce</strong> (number used once) in AEAD schemes is a per-encryption value that must be <em>unique</em> for every encryption under the same key. It does not need to be secret. AES-GCM uses a <strong>96-bit nonce</strong> (12 bytes). The security proof assumes the nonce is never reused — and the rest of this page is what happens when that one rule is broken.</p>
           <p>NIST SP 800-38D calls it an <strong>Initialization Vector (IV)</strong>; RFC 5116 calls it a <strong>nonce</strong> — same concept.</p>
-          <div class="nonce-visual" aria-label="96-bit nonce displayed as 12 hex bytes">
+          <div class="nonce-visual">
             <p class="output-label">96-BIT NONCE (12 BYTES)</p>
             <div id="nonce-display" class="nonce-display" role="img" aria-label="Example nonce: 12 random hex bytes"></div>
           </div>
@@ -210,12 +210,22 @@
             </div>
           </div>
 
+          <!-- ONE label, wrapping both the switch graphic and its caption.
+               There used to be two <label>s for #same-nonce — the wrapper around
+               the input and the caption's `for=` — plus an aria-labelledby
+               pointing at the second. Which of them an assistive technology
+               announces is not specified, so the name a screen-reader user got
+               depended on their AT. Wrapping both click targets in a single
+               label keeps the switch AND the words clickable and leaves exactly
+               one accessible name. -->
           <div class="toggle-row">
-            <label class="toggle-switch">
-              <input type="checkbox" id="same-nonce" aria-labelledby="nonce-toggle-label" checked>
-              <span class="slider" aria-hidden="true"></span>
+            <label id="nonce-toggle-label" class="toggle-switch-label" for="same-nonce">
+              <span class="toggle-switch">
+                <input type="checkbox" id="same-nonce" checked>
+                <span class="slider" aria-hidden="true"></span>
+              </span>
+              <span class="toggle-text">Use same nonce (attack scenario)</span>
             </label>
-            <label id="nonce-toggle-label" for="same-nonce" class="toggle-text">Use same nonce (attack scenario)</label>
           </div>
 
           <div class="button-row">
@@ -230,7 +240,7 @@
 
         <div class="demo-columns" role="region" aria-label="Encryption results comparison">
           <!-- AES-GCM Column -->
-          <div class="demo-column" id="gcm-panel" aria-labelledby="gcm-heading">
+          <div class="demo-column" id="gcm-panel" role="group" aria-labelledby="gcm-heading">
             <h3 id="gcm-heading">🔓 AES-GCM <span class="chip broken">Vulnerable</span></h3>
             <div id="gcm-output" class="output-area">
               <p class="placeholder-text">Click "Encrypt Both" to begin</p>
@@ -238,7 +248,7 @@
           </div>
 
           <!-- AES-GCM-SIV Column -->
-          <div class="demo-column" id="siv-panel" aria-labelledby="siv-heading">
+          <div class="demo-column" id="siv-panel" role="group" aria-labelledby="siv-heading">
             <h3 id="siv-heading">🔒 AES-GCM-SIV <span class="chip safe">Resistant</span></h3>
             <div id="siv-output" class="output-area">
               <p class="placeholder-text">Click "Encrypt Both" to begin</p>
