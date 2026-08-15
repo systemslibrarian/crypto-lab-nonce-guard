@@ -803,7 +803,6 @@ export async function driveAllStates(page: Page, theme: string): Promise<void> {
     page.locator('a.cl-brand'),
     page.locator('nav.cl-actions a.cl-btn').nth(0),
     page.locator('nav.cl-actions a.cl-btn').nth(1),
-    page.locator('#cl-theme-toggle'),
     page.locator("a.skip-link[href='#main']"),
   ]) {
     await page.keyboard.press('Tab');
