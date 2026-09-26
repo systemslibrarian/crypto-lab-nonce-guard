@@ -50,7 +50,7 @@ The field arithmetic, GHASH, key-recovery, and forgery are covered by unit tests
 
 ## Real-World Usage
 
-- **TLS 1.3 (RFC 8446 §9.1):** AES-128-GCM (`TLS_AES_128_GCM_SHA256`) is the mandatory-to-implement cipher suite and AES-256-GCM (`TLS_AES_256_GCM_SHA384`) is SHOULD-implement, with nonce derived from a counter XORed with a per-record mask to guarantee uniqueness.
+- **TLS 1.3 (RFC 9846 §9.1):** AES-128-GCM (`TLS_AES_128_GCM_SHA256`) is the mandatory-to-implement cipher suite and AES-256-GCM (`TLS_AES_256_GCM_SHA384`) is SHOULD-implement, with nonce derived from a counter XORed with a per-record mask to guarantee uniqueness.
 - **QUIC (RFC 9001):** uses AES-GCM with packet number as nonce; Google's QUIC experiments evaluated AES-GCM-SIV for contexts where packet number coordination was complex.
 - **Google Tink:** offers AES-GCM-SIV (`AES128_GCM_SIV`, `AES256_GCM_SIV`) as a supported AEAD key type, documenting that it fails less catastrophically than AES-GCM when nonce limits are exceeded — it may only leak that two messages are equal. It is also one of the accepted DEK types for KMS envelope encryption, though Tink recommends `AES128_GCM` for most uses.
 - **WireGuard:** uses ChaCha20-Poly1305 rather than AES-GCM, partly to avoid nonce management complexity on devices without AES-NI.
