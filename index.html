@@ -461,7 +461,12 @@
           </ul>
         </div>
       </section>
-      </main>
+      <section class="research-context" id="wgcm-research" aria-labelledby="wgcm-heading" style="padding:1.25rem;margin-top:1.5rem;line-height:1.7">
+<h2 id="wgcm-heading">Under consideration: wider-block GCM</h2>
+<p><a style="color:inherit;text-decoration:underline" href="https://csrc.nist.gov/pubs/sp/800/38/d/r1/2prd" target="_blank" rel="noopener noreferrer">NIST’s second pre-draft consultation (1 June 2026)</a> proposes wGCM using a <strong>256-bit-block cipher</strong>. Comments closed 31 July; this is a proposal, not a finalized replacement for GCM.</p>
+<p><strong>AES-128 and AES-256 both have 128-bit blocks.</strong> Changing the AES key length does not implement wGCM. This demo runs its existing AES modes, not Rijndael-256/wGCM. The nonce-reuse experiments and current tag guidance remain applicable to the constructions actually executed here. Reviewed 12 October 2026.</p>
+</section>
+</main>
 
       <footer>
         <p>Part of the <a href="https://systemslibrarian.github.io/crypto-lab/">crypto-lab</a> portfolio</p>
