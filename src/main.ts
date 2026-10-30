@@ -200,7 +200,7 @@ function doAttack(): void {
     gcmAttack.innerHTML = badge('safe', 'NO ATTACK — nonces are unique');
     sivAttack.innerHTML = badge('safe', 'NO ATTACK — nonces are unique');
     announce(
-      'Nonces are unique, so no attack is possible against either scheme.',
+      'Nonces are unique, so the nonce-reuse attacks on this page do not apply.',
     );
     return;
   }
@@ -356,17 +356,17 @@ function doAttack(): void {
   if (identicalPt) {
     sivHtml += badge(
       'warning',
-      'IDENTICAL PLAINTEXT DETECTED — Only information leaked: these two messages were the same',
+      'IDENTICAL INPUTS — the repeated key, nonce, empty AAD, and plaintext reproduce the ciphertext and tag. Length and equality remain visible.',
     );
   } else {
     sivHtml += badge(
       'warning',
-      'NONCE REUSED — Ciphertexts differ because SIV derives IV from plaintext. Keystream was not reused.',
+      'NONCE REUSED WITH DIFFERENT PLAINTEXTS — compare the computed ciphertexts and tags above; this is a finite experiment, not a universal security claim.',
     );
   }
   sivHtml += badge(
-    'safe',
-    'INTEGRITY INTACT — the tag is AES-encrypted, so H stays hidden even though the nonce repeats',
+    'warning',
+    'SCOPE — this panel does not attempt a SIV forgery. Misuse resistance depends on RFC 8452 assumptions and usage bounds; nonce uniqueness remains recommended.',
   );
 
   sivAttack.innerHTML = sivHtml;
@@ -384,8 +384,8 @@ function doAttack(): void {
       integrityOutcome +
       ' ' +
       (identicalPt
-        ? 'AES-GCM-SIV: only leaked that the two plaintexts were identical; integrity intact.'
-        : 'AES-GCM-SIV: ciphertexts differ and no keystream was reused; integrity intact.'),
+        ? 'AES-GCM-SIV: identical full inputs reproduce the encrypted result. Length and equality remain visible; this panel does not test SIV forgery resistance.'
+        : 'AES-GCM-SIV: inspect the ciphertexts for these different inputs. This panel does not test SIV forgery resistance.'),
   );
 }
 
@@ -487,15 +487,15 @@ function initSIVDemo(): void {
 
     let verdict: string;
     if (identical) {
-      // Same plaintext -> same tag -> same IV -> same ciphertext: the ONLY leak.
+      // Full inputs repeat (including the empty AAD), so the result is deterministic.
       verdict = badge(
         'warning',
-        'IDENTICAL PLAINTEXT → IDENTICAL TAG → IDENTICAL IV → IDENTICAL CIPHERTEXT. This equality is the ONLY thing SIV leaks under nonce reuse.',
+        'IDENTICAL FULL INPUTS → IDENTICAL TAG → IDENTICAL IV → IDENTICAL CIPHERTEXT. The same keystream is also reused for these identical inputs. Equality and length remain visible.',
       );
     } else {
       verdict = badge(
         'safe',
-        'ONE BYTE CHANGED → the tag, the derived IV, and the ciphertext all change completely. Different plaintext never reuses the keystream.',
+        'MESSAGE CHANGED — compare the computed tag, derived IV, and ciphertext above. Changing the input does not guarantee distinct finite-length tags for every possible pair.',
       );
     }
 

@@ -166,6 +166,6 @@ test('the screen-reader announcement claims the integrity break only when the ba
   await expect(page.locator('#same-nonce')).not.toBeChecked();
   await page.locator('#btn-encrypt').click();
   await page.locator('#btn-attack').click();
-  await expect(status).toContainText('no attack is possible');
+  await expect(status).toContainText('nonce-reuse attacks on this page do not apply');
   await expect(status).not.toContainText('recovered exactly');
 });
