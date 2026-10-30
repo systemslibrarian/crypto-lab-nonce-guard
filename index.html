@@ -146,7 +146,7 @@
         </div>
         <aside class="cl-hero-why" aria-label="Why it matters">
           <span class="cl-hero-why-label">WHY IT MATTERS</span>
-          <p class="cl-hero-why-text">Nonce reuse isn't hypothetical: production HTTPS servers have shipped it, handing attackers full plaintext recovery and tag forgery. Choosing a misuse-resistant AEAD is the difference between a bug and a total break.</p>
+          <p class="cl-hero-why-text">Nonce reuse isn't hypothetical: production HTTPS servers have shipped it, handing attackers full plaintext recovery and tag forgery. A misuse-resistant AEAD can limit this damage, subject to its construction assumptions and usage bounds.</p>
         </aside>
         <button class="theme-toggle" type="button" id="theme-toggle" aria-label="Switch to light mode">🌙</button>
       </header>
@@ -155,7 +155,7 @@
         <a href="#section-a">What is a Nonce?</a>
         <a href="#section-b">See It Break (Live)</a>
         <a href="#section-c">Why It Breaks</a>
-        <a href="#section-d">SIV: Safe by Design</a>
+        <a href="#section-d">SIV: Misuse Resistance and Its Limits</a>
         <a href="#section-e">When to Use Which</a>
       </nav>
 
@@ -251,7 +251,7 @@
           <h3 id="c-l1-heading">C1 — Level 1: keystream reuse (confidentiality)</h3>
           <p>AES-GCM encrypts by XORing plaintext with a <strong>keystream</strong> — a pseudorandom pad derived from (key, nonce, counter). The keystream depends only on the key and nonce, not on the message. So if you reuse a (key, nonce) pair, <em>both</em> messages get XORed with the <em>same</em> pad:</p>
 
-          <div class="cancel-viz" role="img" aria-label="Cancellation animation for Level 1. Ciphertext one is plaintext one XOR the keystream. Ciphertext two is plaintext two XOR the same keystream. XORing the two ciphertexts makes the two identical keystream blocks cancel, leaving plaintext one XOR plaintext two — the keystream is gone and the plaintexts are exposed.">
+          <div class="cancel-viz" role="img" aria-label="Cancellation animation for Level 1. Ciphertext one is plaintext one XOR the keystream. Ciphertext two is plaintext two XOR the same keystream. XORing the two ciphertexts makes the two identical keystream blocks cancel, leaving plaintext one XOR plaintext two — the shared keystream cancels and the XOR of the plaintexts is exposed, not either plaintext by itself.">
             <div class="cancel-row">
               <span class="cancel-term plain">C₁</span>
               <span class="cancel-op">=</span>
@@ -334,10 +334,10 @@
         </div>
       </section>
 
-      <!-- ============ SECTION D: SIV — Safe by Design ============ -->
+      <!-- ============ SECTION D: SIV — Misuse Resistance and Its Limits ============ -->
       <section id="section-d" aria-labelledby="section-d-heading">
-        <h2 id="section-d-heading">D — SIV: Safe by Design</h2>
-        <p class="section-lead">AES-GCM-SIV closes both holes with one idea: make the IV depend on the plaintext, and AES-encrypt the checksum before anyone sees it. Below: the construction, why the tag-cancellation trick dies, and an interactive panel where you can watch plaintext → tag → IV → ciphertext move together.</p>
+        <h2 id="section-d-heading">D — SIV: Misuse Resistance and Its Limits</h2>
+        <p class="section-lead">AES-GCM-SIV changes the construction: derive the IV from the plaintext and associated data, and AES-encrypt the checksum. Below, compare its computed values and see why the direct GCM attacks no longer apply. Then separate those observations from the broader security claim and its limits.</p>
 
         <div class="card">
           <h3 id="d0-heading">D0 — The synthetic-IV construction (RFC 8452)</h3>
@@ -347,7 +347,7 @@
             <li>Hash the plaintext (and AAD) with <strong>POLYVAL</strong> <span class="gloss-inline">(a keyed checksum, GHASH's twin in a little-endian-friendly field)</span> — then XOR in the nonce and <strong>AES-encrypt</strong> the result to produce the tag</li>
             <li>Use that tag (top bit set) as the <strong>synthetic IV for AES-CTR encryption</strong></li>
           </ol>
-          <p>The IV is derived from the plaintext itself. If the same (key, nonce) pair encrypts two <em>different</em> plaintexts, the two IVs differ, so the two keystreams differ — the Level 1 cancellation can never happen. Nonce reuse degrades to leaking only whether two plaintexts were identical.</p>
+          <p>The synthetic IV depends on the plaintext and associated data, as well as the key and nonce. Changing the plaintext changes this input to tag generation; it does not guarantee distinct finite-length tags for every possible pair. The simple GCM cancellation attack does not transfer to this construction. Under RFC 8452's assumptions and usage bounds, AES-GCM-SIV tolerates nonce repetition with additional equality leakage. Identical full inputs reproduce the tag, IV, keystream, and ciphertext. This lab uses empty associated data; ciphertext length remains visible.</p>
 
           <div class="flow-diagram" role="img" aria-label="AES-GCM-SIV construction flow: master key plus nonce derives a per-nonce auth key and encryption key; POLYVAL hashes the plaintext, the nonce is XORed in, and the result is AES-encrypted to produce the tag; the tag with its top bit set becomes the synthetic IV for AES-CTR encryption">
             <div class="flow-box key">256-bit Master Key + 96-bit Nonce</div>
@@ -386,15 +386,15 @@
             S = POLYVAL(H, AAD, PT); XOR nonce into bytes 0–11; clear MSB of byte 15<br>
             tag = AES<sub>Kenc</sub>(S)
           </div>
-          <p>Recall the Level 2 break in <a href="#section-c">Section C</a>: subtracting two tags cancelled the mask and left a clean polynomial in <code>H</code>. Here the attacker only ever sees <code>AES<sub>Kenc</sub>(S)</code> — never POLYVAL's raw output <code>S</code>. XORing two tags now XORs two <em>AES outputs</em>, which linearizes into nothing: the AES pseudorandom permutation shreds the polynomial structure. So even reusing a nonce (which <em>does</em> reuse H) never leaks the authentication key.</p>
+          <p>Recall the Level 2 break in <a href="#section-c">Section C</a>: subtracting two tags cancelled the mask and left a clean polynomial in <code>H</code>. Here the attacker only ever sees <code>AES<sub>Kenc</sub>(S)</code> — never POLYVAL's raw output <code>S</code>. XORing two tags now XORs two <em>AES outputs</em>; the common-mask cancellation used by the GCM attack no longer exposes that polynomial equation. This explains why that attack does not transfer. It is not a proof that every possible attack fails: confidentiality and integrity depend on the construction's assumptions and usage bounds.</p>
         </div>
 
         <div class="card">
           <h3>D3 — Tag-as-IV, Live: plaintext → tag → IV → ciphertext</h3>
-          <p>SIV's whole safety property is <strong>the IV depends on the plaintext</strong>. The 128-bit tag (the AES-encrypted POLYVAL result) <em>is</em> the initial AES-CTR counter block — copied verbatim, with the most significant bit of its last byte <strong>set to 1</strong> (RFC 8452 §4). That bit is the same one cleared on the tag-generation input, so the tag value can never collide with a CTR counter. Watch all four values move together as you type — the tag changes, so the IV changes, so the very first ciphertext block changes.</p>
+          <p>A visible part of the construction is that <strong>the IV depends on the plaintext and associated data</strong>. That dependency alone is not a complete security argument. The 128-bit tag (the AES-encrypted POLYVAL result) <em>is</em> the initial AES-CTR counter block — copied verbatim, with the most significant bit of its last byte <strong>set to 1</strong> (RFC 8452 §4). That bit is cleared on the AES input used to generate the tag, but set on every CTR counter input. This separates the two kinds of AES input; it does not say that the resulting tag itself cannot equal a counter block. Compare the computed values as you type. A small set of changed tags or ciphertexts illustrates the dependency; it does not rule out collisions for all inputs.</p>
           <label for="siv-input">Message A:</label>
           <input type="text" id="siv-input" class="interactive-input" value="Hello, world!" aria-describedby="siv-desc">
-          <span id="siv-desc" class="sr-only">Type any message to see how the AES-GCM-SIV tag, derived AES-CTR IV, and first ciphertext block all change together</span>
+          <span id="siv-desc" class="sr-only">Type a message to inspect the AES-GCM-SIV tag, derived AES-CTR IV, and first ciphertext block</span>
           <div id="siv-tag-output" class="siv-tag-output" aria-live="polite"></div>
 
           <div class="siv-compare-controls">
@@ -423,7 +423,7 @@
               <tbody>
                 <tr><td>Standard</td><td>NIST SP 800-38D</td><td>RFC 8452</td></tr>
                 <tr><td>Nonce size</td><td>96 bits</td><td>96 bits</td></tr>
-                <tr><td>Nonce reuse consequence</td><td class="text-broken">Key recovery + full plaintext XOR</td><td class="text-warning">Identical plaintext detection only</td></tr>
+                <tr><td>Nonce reuse consequence</td><td class="text-broken">Plaintext XOR; GHASH-subkey recovery and forgery under the stated attack conditions</td><td class="text-warning">Misuse resistance under stated bounds; equality and length remain visible</td></tr>
                 <tr><td>Performance</td><td>~1 pass</td><td>~2 passes (extra POLYVAL)</td></tr>
                 <tr><td>FIPS approved</td><td>Yes</td><td class="text-warning">No — an IRTF CFRG spec (RFC 8452), not a NIST mode</td></tr>
                 <tr><td>Hardware acceleration</td><td>AES-NI + PCLMULQDQ</td><td>AES-NI + PCLMULQDQ</td></tr>
@@ -454,6 +454,7 @@
         <div class="card">
           <h3>E3 — Honest Limitations of AES-GCM-SIV</h3>
           <ul class="limitations">
+            <li><strong>Bounded misuse resistance</strong> — repeating identical key, nonce, AAD, and plaintext repeats the encrypted result; length remains visible. This demo does not measure a security bound or attempt a SIV forgery. RFC 8452 recommends random nonces rather than intentional reuse.</li>
             <li><strong>Not FIPS-approved</strong> — cannot use in FIPS 140-2/3 contexts</li>
             <li><strong>No online encryption</strong> — must have full plaintext before starting (not suitable for streaming)</li>
             <li><strong>Two passes over the data</strong> — the tag must be computed before encryption can begin, so throughput can approach half that of single-pass AES-GCM on long messages, though hardware-optimized (AES-NI + PCLMULQDQ) implementations narrow the gap</li>

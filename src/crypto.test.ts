@@ -58,11 +58,11 @@ describe('AES-GCM-SIV nonce misuse resistance', () => {
     const p2 = textToBytes('attack at dusk!!'); // same length
     const c1 = encryptSIV(key, nonce, p1).ciphertext;
     const c2 = encryptSIV(key, nonce, p2).ciphertext;
-    // Ciphertext XOR must NOT equal plaintext XOR (SIV keystream is not reused).
+    // Check this chosen fixture; it is not a universal collision claim.
     expect(hex(xorBytes(c1, c2))).not.toBe(hex(xorBytes(p1, p2)));
   });
 
-  it('identical plaintexts under a reused nonce collide (the only leak)', () => {
+  it('repeating identical full inputs reproduces the ciphertext and tag', () => {
     const key = generateKey();
     const nonce = generateNonce();
     const pt = textToBytes('the same message');
