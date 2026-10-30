@@ -845,7 +845,7 @@ export async function driveAllStates(page: Page, theme: string): Promise<void> {
   await page.click('#siv-mode-same');
   await expect(page.locator('#siv-mode-same')).toHaveAttribute('aria-checked', 'true');
   await expect(page.locator('#siv-compare-output .status-badge.warning')).toBeVisible();
-  await scanAt('SIV comparison: same message twice, the one thing SIV leaks');
+  await scanAt('SIV comparison: same full inputs reproduce the result');
 
   // ── Section B: the attack path (the toggle's shipped default) ───────────
   await encrypt(page, true);
@@ -857,7 +857,7 @@ export async function driveAllStates(page: Page, theme: string): Promise<void> {
   await expect(page.locator('#gcm-attack-output')).toContainText('H RECOVERED EXACTLY');
   await expect(page.locator('#gcm-attack-output')).toContainText('FORGERY ACCEPTED');
   await expect(page.locator('#gcm-attack-output .threat-box')).toBeVisible();
-  await expect(page.locator('#siv-attack-output .status-badge.safe')).toBeVisible();
+  await expect(page.locator('#siv-attack-output .status-badge.warning').filter({ hasText: 'SCOPE —' })).toBeVisible();
   await scanAt('attack run: H recovered, tag forged, threat box rendered');
 
   // ── Section B: the safe path, reached only by unchecking the default ────
@@ -887,7 +887,7 @@ export async function driveAllStates(page: Page, theme: string): Promise<void> {
   await encrypt(page, true);
   await page.click('#btn-attack');
   await expect(page.locator('#gcm-attack-output')).toContainText('NO KEY RECOVERED');
-  await expect(page.locator('#siv-attack-output')).toContainText('IDENTICAL PLAINTEXT DETECTED');
+  await expect(page.locator('#siv-attack-output')).toContainText('IDENTICAL INPUTS');
   await scanAt('identical messages: 0 = 0, nothing learned, SIV leaks only equality');
 
   // `no-keystream`, and Level 1 with no crib overlap: an empty Message 1.
