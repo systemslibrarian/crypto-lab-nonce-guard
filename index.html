@@ -461,6 +461,12 @@
             <li><strong>Not yet widely deployed</strong> — operational experience is thin compared to AES-GCM</li>
           </ul>
         </div>
+        <div class="card" id="nonce-reuse-and-replay">
+          <h3>E4 — Nonce Reuse and Replay Are Different</h3>
+          <p><strong>Nonce reuse at encryption</strong> means using the same key-and-nonce pair for more than one encryption. With distinct messages, AES-GCM can expose the plaintext XOR and enable the forgery attacks demonstrated above. <strong>Replay</strong> means sending an unchanged, previously valid packet again: its authentication tag can still verify.</p>
+          <p>Neither AES-GCM nor AES-GCM-SIV remembers which packets a receiver has already accepted. A protocol must separately check freshness, for example by authenticating session identifiers and sequence numbers and maintaining receiver replay state. Authentication must succeed before that state is advanced. Explore this distinction in <a href="https://systemslibrarian.github.io/crypto-lab-ipsec-ike/">IPsec / IKE's replay-window lesson</a>.</p>
+          <p><strong>Reading comparison:</strong> <cite>Cryptography: Algorithms, Protocols, and Standards for Computer Security</cite>, second edition, §9.2.8.1, discusses nonces and replay. Keep the two responsibilities separate: <a href="https://www.rfc-editor.org/rfc/rfc5116.html#section-1.2">RFC 5116 §1.2</a> places protocol anti-replay services outside the AEAD interface. Nonce misuse resistance does not provide replay protection.</p>
+        </div>
       </section>
       <section class="research-context" id="wgcm-research" aria-labelledby="wgcm-heading" style="padding:1.25rem;margin-top:1.5rem;line-height:1.7">
 <h2 id="wgcm-heading">Under consideration: wider-block GCM</h2>
@@ -489,3 +495,4 @@
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
+
