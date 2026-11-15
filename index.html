@@ -428,7 +428,7 @@
                 <tr><td>FIPS approved</td><td>Yes</td><td class="text-warning">No — an IRTF CFRG spec (RFC 8452), not a NIST mode</td></tr>
                 <tr><td>Hardware acceleration</td><td>AES-NI + PCLMULQDQ</td><td>AES-NI + PCLMULQDQ</td></tr>
                 <tr><td>Online encryption</td><td>Yes</td><td>No — must buffer full plaintext</td></tr>
-                <tr><td>Deployed in</td><td>TLS 1.3, QUIC, IPsec</td><td>Google internal, QUIC experiments</td></tr>
+                <tr><td>Deployed in</td><td>TLS 1.3, QUIC, IPsec</td><td>BoringSSL and Tink; Google QUIC source-address tokens per Langley 2017 (not packet protection)</td></tr>
                 <tr><td>Recommendation</td><td>✅ Nonce uniqueness guaranteed</td><td>✅ Nonce uniqueness uncertain</td></tr>
               </tbody>
             </table>
