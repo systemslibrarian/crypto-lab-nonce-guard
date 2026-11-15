@@ -14,7 +14,7 @@ function randBytes(n: number): Uint8Array {
   return b;
 }
 
-/** True GHASH key H = AES-256(key, 0¹²⁸) (NIST SP 800-38D §6.3). */
+/** True GHASH key H = AES-256(key, 0¹²⁸) (NIST SP 800-38D §5.3, §7.1 step 1). */
 function trueH(key: Uint8Array): Uint8Array {
   const block = new Uint8Array(16);
   unsafe.encryptBlock(unsafe.expandKeyLE(key), block);

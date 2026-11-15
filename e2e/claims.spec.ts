@@ -136,6 +136,18 @@ test('Level 2 declines, rather than faking, past its stated root-search budget',
   await expect(output).toContainText('INTEGRITY BROKEN');
 });
 
+test('the key-wrapping scenario claims no more about Tink than Tink does', async ({ page }) => {
+  await page.goto('.');
+
+  // Tink's AEAD documentation presents AES-GCM-SIV as a supported key type
+  // "resistant to accidental nonce misuse" and recommends AES128_GCM for most
+  // uses; it does not say Tink wraps keys with it.
+  const scenario = page.locator('.scenario', { hasText: 'Key wrapping and key storage' });
+  await expect(scenario).toContainText('offers AES-GCM-SIV as a supported AEAD key type');
+  await expect(scenario).toContainText('recommends AES128_GCM for most uses');
+  await expect(scenario).not.toContainText('uses it for key wrapping');
+});
+
 test('the screen-reader announcement claims the integrity break only when the badges do', async ({
   page,
 }) => {

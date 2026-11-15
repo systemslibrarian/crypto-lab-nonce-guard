@@ -447,7 +447,7 @@
           </div>
           <div class="scenario">
             <h4>Scenario 3 — Key wrapping and key storage</h4>
-            <p>AES-GCM-SIV is designed for this — short messages, repeated access to the same key, nonce coordination difficult. Google's Tink library uses it for key wrapping.</p>
+            <p>AES-GCM-SIV is designed for this — short messages, repeated access to the same key, nonce coordination difficult. Google's Tink offers AES-GCM-SIV as a supported AEAD key type for its nonce-misuse resistance, though it recommends AES128_GCM for most uses.</p>
           </div>
         </div>
 
